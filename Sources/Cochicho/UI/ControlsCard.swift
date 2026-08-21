@@ -8,6 +8,7 @@ struct ControlsCard: View {
     private var settings: AppSettings { .shared }
     @State private var recordingKey = false
     @State private var keyMonitor: Any?
+    @State private var launchAtLogin = LaunchAtLogin.isEnabled
 
     var body: some View {
         Card {
@@ -72,6 +73,7 @@ struct ControlsCard: View {
 
                 FlagRow(label: "ÍCONE NA MENUBAR", isOn: menuBarBinding)
                 FlagRow(label: "ÍCONE NO DOCK", isOn: dockBinding)
+                FlagRow(label: "ABRIR AO INICIAR", isOn: launchAtLoginBinding)
                 FlagRow(label: "SONS", isOn: Binding(
                     get: { settings.soundEnabled },
                     set: { settings.soundEnabled = $0 }
@@ -86,6 +88,7 @@ struct ControlsCard: View {
                 }
             }
         }
+        .onAppear { launchAtLogin = LaunchAtLogin.isEnabled }
     }
 
     private func preset(_ label: String, _ spec: HotkeySpec) -> some View {
@@ -123,6 +126,17 @@ struct ControlsCard: View {
             NSEvent.removeMonitor(keyMonitor)
         }
         keyMonitor = nil
+    }
+
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: { launchAtLogin },
+            set: { newValue in
+                LaunchAtLogin.setEnabled(newValue)
+                // Re-read system status — register may land in `.requiresApproval`.
+                launchAtLogin = LaunchAtLogin.isEnabled
+            }
+        )
     }
 
     private var menuBarBinding: Binding<Bool> {
