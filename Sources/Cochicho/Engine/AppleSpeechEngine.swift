@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreMedia
 import Foundation
 import Speech
 
@@ -17,6 +18,10 @@ actor AppleSpeechEngine: TranscriptionEngine {
     /// Text the engine has committed. Volatile results are appended on top for display
     /// but discarded as soon as a final result covering the same range arrives.
     private var finalizedText = ""
+
+    /// Monotonic timeline for `AnalyzerInput` — without it, SpeechAnalyzer often withholds
+    /// volatile results until `finalize`, which is why the HUD looked "dead" while talking.
+    private var nextBufferTime = CMTime.zero
 
     init(locale: Locale) {
         self.locale = locale
@@ -43,6 +48,8 @@ actor AppleSpeechEngine: TranscriptionEngine {
         let (inputStream, inputContinuation) = AsyncStream<AnalyzerInput>.makeStream()
         self.inputContinuation = inputContinuation
 
+        let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber])
+
         // Bias the recognizer toward the dictionary's words before it hears anything. A
         // nudge, not a guarantee — `DictionaryCorrector` is the pass that enforces spelling.
         // Capped: a long context list makes these models drift on quiet or ambiguous audio.
@@ -52,7 +59,11 @@ actor AppleSpeechEngine: TranscriptionEngine {
             try? await analyzer.setContext(context)
         }
 
+        // Preheat so the first volatile result isn't stuck behind a cold model load.
+        try await analyzer.prepareToAnalyze(in: format)
+
         finalizedText = ""
+        nextBufferTime = .zero
 
         let (chunks, chunkContinuation) = AsyncThrowingStream<TranscriptionChunk, Error>.makeStream()
 
@@ -62,10 +73,14 @@ actor AppleSpeechEngine: TranscriptionEngine {
                 for try await result in transcriber.results {
                     guard let self else { break }
                     let snapshot = await self.absorb(result)
-                    chunkContinuation.yield(TranscriptionChunk(text: snapshot, isFinal: false))
+                    if !snapshot.isEmpty {
+                        chunkContinuation.yield(TranscriptionChunk(text: snapshot, isFinal: result.isFinal))
+                    }
                 }
                 let final = await self?.finalizedText ?? ""
-                chunkContinuation.yield(TranscriptionChunk(text: final, isFinal: true))
+                if !final.isEmpty {
+                    chunkContinuation.yield(TranscriptionChunk(text: final, isFinal: true))
+                }
                 chunkContinuation.finish()
             } catch {
                 Log.speech.error("results stream failed: \(error.localizedDescription)")
@@ -74,13 +89,23 @@ actor AppleSpeechEngine: TranscriptionEngine {
         }
 
         try await analyzer.start(inputSequence: inputStream)
-        Log.speech.info("SpeechAnalyzer started for \(resolvedLocale.identifier)")
+        Log.speech.info("SpeechAnalyzer started for \(resolvedLocale.identifier) (volatile+fast)")
 
         return chunks
     }
 
     func feed(_ chunk: AudioChunk) async {
-        inputContinuation?.yield(AnalyzerInput(buffer: chunk.buffer))
+        let buffer = chunk.buffer
+        guard buffer.frameLength > 0 else { return }
+
+        let start = nextBufferTime
+        let duration = CMTime(
+            value: CMTimeValue(buffer.frameLength),
+            timescale: CMTimeScale(max(1, Int32(buffer.format.sampleRate.rounded())))
+        )
+        nextBufferTime = CMTimeAdd(start, duration)
+
+        inputContinuation?.yield(AnalyzerInput(buffer: buffer, bufferStartTime: start))
     }
 
     func finish() async {
@@ -94,9 +119,11 @@ actor AppleSpeechEngine: TranscriptionEngine {
             await analyzer?.cancelAndFinishNow()
         }
 
+        // Let the results task drain the final yields before we tear the refs down.
+        await resultsTask?.value
+        resultsTask = nil
         analyzer = nil
         transcriber = nil
-        resultsTask = nil
     }
 
     // MARK: - Result accumulation
@@ -130,8 +157,9 @@ actor AppleSpeechEngine: TranscriptionEngine {
         SpeechTranscriber(
             locale: locale,
             transcriptionOptions: [],
-            // `.volatileResults` is what makes live text appear while you're still talking.
-            reportingOptions: [.volatileResults],
+            // `volatileResults` = live guesses while speaking.
+            // `fastResults` = lower latency (the missing piece that made the HUD feel dead).
+            reportingOptions: [.volatileResults, .fastResults],
             attributeOptions: []
         )
     }

@@ -218,6 +218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         withObservationTracking {
             _ = controller.state
             _ = AppSettings.shared.showMenuBar
+            _ = AppSettings.shared.hudSize
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -226,6 +227,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 } else {
                     self.hud?.dismiss()
                 }
+                self.hud?.applySize()
                 self.statusItem?.sync()
                 self.observeState()
             }

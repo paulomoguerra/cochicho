@@ -35,7 +35,9 @@ final class AudioCapture: @unchecked Sendable {
             : AVAudioConverter(from: nativeFormat, to: outputFormat)
 
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 2048, format: nativeFormat) { [weak self] buffer, _ in
+        // 4096+ frames: SpeechAnalyzer streaming is flaky with tiny buffers and delays
+        // the first volatile result until finalize.
+        input.installTap(onBus: 0, bufferSize: 4096, format: nativeFormat) { [weak self] buffer, _ in
             self?.handle(buffer)
         }
 

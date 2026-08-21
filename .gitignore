@@ -2,3 +2,6 @@
 .build/
 .swiftpm/
 Support/AppIcon.iconset/
+
+# Design mockups (local only)
+.mockups/

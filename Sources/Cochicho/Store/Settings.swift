@@ -39,6 +39,30 @@ enum HotkeyMode: String, CaseIterable, Codable {
     }
 }
 
+enum HUDSize: String, CaseIterable, Codable {
+    /// Declaration order = picker order: Mínimo → Médio → Grande.
+    case minimal
+    case medium
+    case large
+
+    var displayName: String {
+        switch self {
+        case .minimal: "MÍNIMO"
+        case .medium: "MÉDIO"
+        case .large: "GRANDE"
+        }
+    }
+
+    var panelSize: CGSize {
+        switch self {
+        case .minimal: CGSize(width: 160, height: 40)
+        case .medium: CGSize(width: 380, height: 84)
+        // Tall enough for header + waveform + 3 lines of 13pt mono (old 130 clipped the text).
+        case .large: CGSize(width: 480, height: 176)
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class AppSettings {
@@ -62,6 +86,9 @@ final class AppSettings {
     var hotkeyMode: HotkeyMode {
         didSet { defaults.set(hotkeyMode.rawValue, forKey: "hotkeyMode") }
     }
+    var hudSize: HUDSize {
+        didSet { defaults.set(hudSize.rawValue, forKey: "hudSize") }
+    }
     var showMenuBar: Bool {
         didSet { defaults.set(showMenuBar, forKey: "showMenuBar") }
     }
@@ -76,6 +103,7 @@ final class AppSettings {
         engine = Engine(rawValue: defaults.string(forKey: "engine") ?? "") ?? .apple
         language = Language(rawValue: defaults.string(forKey: "language") ?? "") ?? .ptBR
         hotkeyMode = HotkeyMode(rawValue: defaults.string(forKey: "hotkeyMode") ?? "") ?? .hold
+        hudSize = Self.loadHUDSize(from: defaults)
         showMenuBar = defaults.object(forKey: "showMenuBar") as? Bool ?? true
         showDock = defaults.object(forKey: "showDock") as? Bool ?? true
         soundEnabled = defaults.object(forKey: "soundEnabled") as? Bool ?? true
@@ -86,5 +114,27 @@ final class AppSettings {
         } else {
             hotkey = .rightOption
         }
+    }
+
+    /// One-shot map from the old PADRÃO/MÉDIO/MÍNIMO raw values onto the renamed cases.
+    /// `medium` used to mean "grande"; after migration it means the former padrão — so
+    /// we must not keep remapping it on every launch.
+    private static func loadHUDSize(from defaults: UserDefaults) -> HUDSize {
+        let key = "hudSize"
+        let flag = "hudSizeRenamedToMinMedLarge"
+        let raw = defaults.string(forKey: key) ?? ""
+        if defaults.bool(forKey: flag) {
+            return HUDSize(rawValue: raw) ?? .medium
+        }
+        defaults.set(true, forKey: flag)
+        let size: HUDSize = switch raw {
+        case "standard": .medium
+        case "medium": .large
+        case "minimal": .minimal
+        case "large": .large
+        default: .medium
+        }
+        defaults.set(size.rawValue, forKey: key)
+        return size
     }
 }

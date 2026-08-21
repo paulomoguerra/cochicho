@@ -209,9 +209,17 @@ final class DictationController {
             // of the right word; this is the pass that guarantees it.
             let (output, corrections) = DictionaryStore.shared.corrector.apply(to: raw)
 
+            // Show the final (corrected) line on the HUD for a beat so Grande is readable
+            // before the panel dismisses with `.idle`.
+            transcript = output
             recordRun(text: output, corrections: corrections)
             TextInjector.insert(output)
             if AppSettings.shared.soundEnabled { NSSound(named: "Pop")?.play() }
+
+            let hold: Duration = AppSettings.shared.hudSize == .large
+                ? .milliseconds(1600)
+                : .milliseconds(700)
+            try? await Task.sleep(for: hold)
 
             state = .idle
             transcript = ""

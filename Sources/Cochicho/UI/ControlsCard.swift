@@ -56,6 +56,18 @@ struct ControlsCard: View {
                     )
                 }
 
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("TAMANHO DO HUD")
+                        .font(Theme.mono(9)).tracking(1.5).foregroundStyle(Theme.inkFaint)
+                    SegmentPicker(
+                        options: HUDSize.allCases.map { ($0, $0.displayName) },
+                        selection: Binding(
+                            get: { settings.hudSize },
+                            set: { settings.hudSize = $0 }
+                        )
+                    )
+                }
+
                 Divider().overlay(Theme.cardBorder)
 
                 FlagRow(label: "ÍCONE NA MENUBAR", isOn: menuBarBinding)
