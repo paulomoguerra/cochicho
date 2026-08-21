@@ -28,5 +28,16 @@
     <string>O Cochicho usa o modelo de fala local do macOS para transcrever.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.mateus.cochicho</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>cochicho</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

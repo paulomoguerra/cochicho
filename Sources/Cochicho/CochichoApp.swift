@@ -4,63 +4,155 @@ import SwiftUI
 @main
 struct CochichoApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    private var settings: AppSettings { .shared }
-    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
-        Window("Cochicho", id: "main") {
+        // WindowGroup + external-event routing so AppKit code (the status-item menu) can
+        // reopen the dashboard after the user closes it — a plain `Window` scene offers no
+        // way back in from outside SwiftUI. `preferring`/`allowing` pin it to one window.
+        WindowGroup("Cochicho", id: "main") {
             DashboardView(controller: delegate.controller)
                 .onAppear { delegate.dashboardOpened() }
+                .handlesExternalEvents(preferring: ["main"], allowing: ["main"])
         }
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
-
-        MenuBarExtra(isInserted: Binding(
-            get: { settings.showMenuBar },
-            set: { settings.showMenuBar = $0 }
-        )) {
-            MenuBarContent(controller: delegate.controller, openWindow: openWindow)
-        } label: {
-            Image(systemName: delegate.controller.state.isActive
-                  ? "waveform.circle.fill" : "waveform")
+        .handlesExternalEvents(matching: ["main"])
+        .commands {
+            CommandGroup(replacing: .newItem) {}
         }
     }
 }
 
-struct MenuBarContent: View {
-    let controller: DictationController
-    let openWindow: OpenWindowAction
-    private var settings: AppSettings { .shared }
+/// The menu bar icon + menu, in AppKit.
+///
+/// Not SwiftUI's `MenuBarExtra` on purpose: on macOS 26 it presents its menu detached,
+/// floating well below the bar, and exposes no `NSStatusItem` handle to fix the anchor.
+/// A classic status item positions natively.
+@MainActor
+final class StatusItemController: NSObject, NSMenuDelegate {
+    private let controller: DictationController
+    private var item: NSStatusItem?
 
-    var body: some View {
-        Button(controller.state.isActive ? "Parar ditado" : "Iniciar ditado") {
-            controller.toggleFromUI()
+    init(controller: DictationController) {
+        self.controller = controller
+        super.init()
+    }
+
+    /// Creates or removes the item per settings, and refreshes the icon. Idempotent —
+    /// called from the app-state observation loop on every relevant change.
+    func sync() {
+        let wanted = AppSettings.shared.showMenuBar
+        if wanted && item == nil {
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+            let menu = NSMenu()
+            // Rebuilt in `menuNeedsUpdate` each time it opens, so titles and checkmarks
+            // are always current without observing every setting individually.
+            menu.delegate = self
+            item.menu = menu
+            self.item = item
+        } else if !wanted, let item {
+            NSStatusBar.system.removeStatusItem(item)
+            self.item = nil
         }
-        Divider()
-        Picker("Engine", selection: Binding(
-            get: { settings.engine },
-            set: { settings.engine = $0 }
-        )) {
-            ForEach(Engine.allCases, id: \.self) { engine in
-                Text(engine.displayName).tag(engine)
-            }
+        updateIcon()
+    }
+
+    private func updateIcon() {
+        guard let button = item?.button else { return }
+        let name = controller.state.isActive ? "waveform.circle.fill" : "waveform"
+        button.image = NSImage(systemSymbolName: name, accessibilityDescription: "Cochicho")
+        button.image?.isTemplate = true
+    }
+
+    // MARK: - NSMenuDelegate
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+
+        let toggle = NSMenuItem(
+            title: controller.state.isActive ? "Parar ditado" : "Iniciar ditado",
+            action: #selector(toggleDictation), keyEquivalent: ""
+        )
+        toggle.target = self
+        menu.addItem(toggle)
+
+        menu.addItem(.separator())
+
+        let engineMenu = NSMenu()
+        for engine in Engine.allCases {
+            let entry = NSMenuItem(
+                title: engine.displayName, action: #selector(pickEngine(_:)), keyEquivalent: ""
+            )
+            entry.target = self
+            entry.representedObject = engine.rawValue
+            entry.state = engine == AppSettings.shared.engine ? .on : .off
+            engineMenu.addItem(entry)
         }
-        Picker("Idioma", selection: Binding(
-            get: { settings.language },
-            set: { settings.language = $0 }
-        )) {
-            ForEach(Language.allCases, id: \.self) { language in
-                Text(language.displayName).tag(language)
-            }
+        let engineItem = NSMenuItem(title: "Engine", action: nil, keyEquivalent: "")
+        engineItem.submenu = engineMenu
+        menu.addItem(engineItem)
+
+        let languageMenu = NSMenu()
+        for language in Language.allCases {
+            let entry = NSMenuItem(
+                title: language.displayName.capitalized, action: #selector(pickLanguage(_:)),
+                keyEquivalent: ""
+            )
+            entry.target = self
+            entry.representedObject = language.rawValue
+            entry.state = language == AppSettings.shared.language ? .on : .off
+            languageMenu.addItem(entry)
         }
-        Divider()
-        Button("Abrir Cochicho") {
-            NSApp.activate(ignoringOtherApps: true)
-            openWindow(id: "main")
+        let languageItem = NSMenuItem(title: "Idioma", action: nil, keyEquivalent: "")
+        languageItem.submenu = languageMenu
+        menu.addItem(languageItem)
+
+        menu.addItem(.separator())
+
+        let open = NSMenuItem(
+            title: "Abrir Cochicho", action: #selector(openDashboard), keyEquivalent: ""
+        )
+        open.target = self
+        menu.addItem(open)
+
+        let quit = NSMenuItem(title: "Sair", action: #selector(quit), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+    }
+
+    // MARK: - Actions
+
+    @objc private func toggleDictation() {
+        controller.toggleFromUI()
+    }
+
+    @objc private func pickEngine(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let engine = Engine(rawValue: raw) else { return }
+        AppSettings.shared.engine = engine
+    }
+
+    @objc private func pickLanguage(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let language = Language(rawValue: raw) else { return }
+        AppSettings.shared.language = language
+    }
+
+    @objc private func openDashboard() {
+        NSApp.activate(ignoringOtherApps: true)
+        if let window = NSApp.windows.first(where: {
+            $0.identifier?.rawValue.contains("main") ?? false
+        }) {
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            // Window was closed and released — route back in through the URL scheme,
+            // which `handlesExternalEvents` turns into a fresh dashboard window.
+            NSWorkspace.shared.open(URL(string: "cochicho://main")!)
         }
-        Button("Sair") {
-            NSApp.terminate(nil)
-        }
+    }
+
+    @objc private func quit() {
+        NSApp.terminate(nil)
     }
 }
 
@@ -68,11 +160,14 @@ struct MenuBarContent: View {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let controller = DictationController()
     private var hud: HUDPanel?
+    private var statusItem: StatusItemController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(AppSettings.shared.showDock ? .regular : .accessory)
 
         hud = HUDPanel(controller: controller)
+        statusItem = StatusItemController(controller: controller)
+        statusItem?.sync()
         observeState()
 
         if !controller.activate() {
@@ -118,9 +213,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// `withObservationTracking` fires once per change, so re-arm after every hit.
+    /// Tracks dictation state (HUD + icon) and the menubar toggle (item lifecycle).
     private func observeState() {
         withObservationTracking {
             _ = controller.state
+            _ = AppSettings.shared.showMenuBar
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -129,6 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 } else {
                     self.hud?.dismiss()
                 }
+                self.statusItem?.sync()
                 self.observeState()
             }
         }
