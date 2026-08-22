@@ -228,28 +228,23 @@ actor WhisperModels {
 
     /// Actual bytes on disk for a downloaded model — what the catalog shows next to it.
     static func diskSize(of model: String) async -> Int64 {
-        let folder = modelFolder(model)
-        return await Task.detached(priority: .utility) {
-            measureFolder(folder)
-        }.value
-    }
-
-    /// Synchronous on purpose: `FileManager.enumerator` can't be iterated from an async
-    /// context (its iterator isn't concurrency-safe).
-    private nonisolated static func measureFolder(_ folder: URL) -> Int64 {
-        guard let enumerator = FileManager.default.enumerator(
-            at: folder, includingPropertiesForKeys: [.totalFileAllocatedSizeKey]
-        ) else { return 0 }
-        var total: Int64 = 0
-        for case let url as URL in enumerator {
-            let values = try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey])
-            total += Int64(values?.totalFileAllocatedSize ?? 0)
-        }
-        return total
+        await directorySize(at: modelFolder(model))
     }
 
     private var loaded: (model: String, pipe: WhisperKit)?
     private var loadTask: (model: String, task: Task<WhisperKit, Error>)?
+
+    var loadedModel: String? { loaded?.model }
+    var isLoading: Bool { loadTask != nil }
+    func isLoaded(_ model: String) -> Bool { loaded?.model == model }
+
+    /// Drop pipeline from RAM; does not delete disk files.
+    func unload() {
+        loaded = nil
+        loadTask?.task.cancel()
+        loadTask = nil
+        Log.speech.info("Whisper: unloaded from RAM")
+    }
 
     /// Loads once per model; switching models drops the previous pipeline from RAM.
     func pipe(for model: String) async throws -> WhisperKit {
@@ -257,6 +252,7 @@ actor WhisperModels {
         if let loadTask, loadTask.model == model { return try await loadTask.task.value }
 
         loaded = nil
+        loadTask?.task.cancel()
         loadTask = nil
         let task = Task<WhisperKit, Error> {
             let stage = Self.isDownloaded(model) ? "loading from disk" : "downloading"

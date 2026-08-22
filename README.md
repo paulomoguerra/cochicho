@@ -43,3 +43,13 @@ file providers), `make run` roda, `make icon` regenera o ícone.
 Arquitetura emprestada com gratidão de
 [murmur-youtube](https://github.com/per-simmons/murmur-youtube) (captura de áudio,
 event tap, injeção de texto verificada) — reescrita e estendida aqui.
+
+## Apoie
+
+Cochicho é grátis e open source. Se ele ganhou lugar no seu Mac, um café via
+Lightning é bem-vindo: menu da barra → **Buy me a coffee** (abre na carteira ou
+copia o LNURL).
+
+## Licença
+
+[MIT](LICENSE)

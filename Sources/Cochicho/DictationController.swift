@@ -257,24 +257,35 @@ final class DictationController {
                 return
             }
 
-            // The dictionary runs last and unconditionally — biasing only raises the odds
-            // of the right word; this is the pass that guarantees it.
-            let (output, corrections) = DictionaryStore.shared.corrector.apply(to: raw)
+            let output: String
+            let corrections: [AppliedCorrection]
+            if AppSettings.shared.dictionaryEnabled {
+                (output, corrections) = DictionaryStore.shared.corrector.apply(to: raw)
+            } else {
+                output = raw
+                corrections = []
+            }
 
-            // Show the final (corrected) line on the HUD for a beat so Grande is readable
-            // before the panel dismisses with `.idle`.
             transcript = output
             recordRun(text: output, corrections: corrections)
             TextInjector.insert(output)
+            if AppSettings.shared.copyToClipboard {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(output, forType: .string)
+            }
+            if AppSettings.shared.pressReturn {
+                TextInjector.pressReturn()
+            }
             if AppSettings.shared.soundEnabled { NSSound(named: "Pop")?.play() }
 
-            let hold: Duration = AppSettings.shared.hudSize == .large
-                ? .milliseconds(1600)
-                : .milliseconds(700)
-            try? await Task.sleep(for: hold)
-
+            // Idle immediately — the HUD starts fading and the hotkey is live again for
+            // the next dictation. Clear the transcript only after the fade so the panel
+            // doesn't go blank mid-dismissal.
             state = .idle
-            transcript = ""
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(250))
+                if case .idle = state { transcript = "" }
+            }
         }
     }
 
@@ -315,18 +326,20 @@ final class DictationController {
 
     private func recordRun(text: String, corrections: [AppliedCorrection]) {
         guard let holdStarted, let releasedAt else { return }
-        HistoryStore.shared.record(
-            HistoryEntry(
-                id: UUID(),
-                date: releasedAt,
-                text: text,
-                engine: engineName,
-                language: languageName,
-                audioSeconds: releasedAt.timeIntervalSince(holdStarted),
-                processSeconds: Date().timeIntervalSince(releasedAt),
-                corrections: corrections.isEmpty ? nil : corrections
+        if AppSettings.shared.saveHistory {
+            HistoryStore.shared.record(
+                HistoryEntry(
+                    id: UUID(),
+                    date: releasedAt,
+                    text: text,
+                    engine: engineName,
+                    language: languageName,
+                    audioSeconds: releasedAt.timeIntervalSince(holdStarted),
+                    processSeconds: Date().timeIntervalSince(releasedAt),
+                    corrections: corrections.isEmpty ? nil : corrections
+                )
             )
-        )
+        }
         self.holdStarted = nil
         self.releasedAt = nil
     }

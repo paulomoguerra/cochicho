@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cochicho — tamanhos do HUD</title>
+  <style>
+    :root {
+      --bg: #131210;
+      --card: #1d1c1b;
+      --border: rgba(255,255,255,0.06);
+      --ink: #ede8e0;
+      --ink-dim: rgba(255,255,255,0.42);
+      --ink-faint: rgba(255,255,255,0.22);
+      --accent: #ff4500;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+      padding: 32px 28px 64px;
+    }
+    header {
+      max-width: 1280px;
+      margin: 0 auto 28px;
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    header .num { color: var(--ink-faint); font-size: 11px; letter-spacing: 0.12em; }
+    header h1 {
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--ink-dim);
+    }
+    header p {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--ink-faint);
+      letter-spacing: 0.08em;
+    }
+    .grid {
+      max-width: 1280px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+    @media (max-width: 960px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .card.selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+    .meta {
+      padding: 16px 18px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .meta .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .meta .label {
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--ink-dim);
+    }
+    .meta .badge {
+      margin-left: auto;
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .meta .dims {
+      font-size: 11px;
+      color: var(--ink-faint);
+      letter-spacing: 0.06em;
+    }
+    .meta .blurb {
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--ink-dim);
+      letter-spacing: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin-top: 4px;
+    }
+    .shot {
+      position: relative;
+      background: #0a0908;
+      aspect-ratio: 16 / 10;
+      overflow: hidden;
+    }
+    .shot img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center 70%;
+      display: block;
+    }
+    .actions {
+      padding: 14px 18px 18px;
+      margin-top: auto;
+    }
+    button.pick {
+      width: 100%;
+      appearance: none;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--ink);
+      font: inherit;
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      padding: 12px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: border-color .15s, color .15s, background .15s;
+    }
+    button.pick:hover {
+      border-color: rgba(255,69,0,0.55);
+      color: var(--accent);
+    }
+    .card.selected button.pick {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #120c08;
+      font-weight: 600;
+    }
+    footer {
+      max-width: 1280px;
+      margin: 24px auto 0;
+      font-size: 11px;
+      color: var(--ink-faint);
+      letter-spacing: 0.08em;
+    }
+    footer strong { color: var(--ink-dim); font-weight: 500; }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="num">01</span>
+    <h1>HUD · tamanhos</h1>
+    <p>escolhe um · mockup</p>
+  </header>
+
+  <div class="grid">
+    <article class="card" data-size="compact">
+      <div class="meta">
+        <div class="row">
+          <span class="label">Compacto</span>
+        </div>
+        <div class="dims">~280 × 56</div>
+        <p class="blurb">Pílula mínima. Status + waveform curto. Quase sem texto.</p>
+      </div>
+      <div class="shot"><img src="1.jpg" alt="HUD Compacto" /></div>
+      <div class="actions"><button class="pick" type="button">Escolher</button></div>
+    </article>
+
+    <article class="card" data-size="medium">
+      <div class="meta">
+        <div class="row">
+          <span class="label">Médio</span>
+          <span class="badge">atual</span>
+        </div>
+        <div class="dims">~380 × 84</div>
+        <p class="blurb">O que você tem hoje. Waveform + 1 linha de preview.</p>
+      </div>
+      <div class="shot"><img src="2.jpg" alt="HUD Médio" /></div>
+      <div class="actions"><button class="pick" type="button">Escolher</button></div>
+    </article>
+
+    <article class="card" data-size="large">
+      <div class="meta">
+        <div class="row">
+          <span class="label">Grande</span>
+        </div>
+        <div class="dims">~520 × 160</div>
+        <p class="blurb">Card alto. Waveform maior + 2–3 linhas legíveis.</p>
+      </div>
+      <div class="shot"><img src="3.jpg" alt="HUD Grande" /></div>
+      <div class="actions"><button class="pick" type="button">Escolher</button></div>
+    </article>
+  </div>
+
+  <footer>Selecionado: <strong id="choice">nenhum</strong></footer>
+
+  <script>
+    const cards = [...document.querySelectorAll(".card")];
+    const choice = document.getElementById("choice");
+    const labels = { compact: "Compacto", medium: "Médio", large: "Grande" };
+    cards.forEach((card) => {
+      card.querySelector("button").addEventListener("click", () => {
+        cards.forEach((c) => c.classList.remove("selected"));
+        card.classList.add("selected");
+        choice.textContent = labels[card.dataset.size];
+      });
+    });
+  </script>
+</body>
+</html>

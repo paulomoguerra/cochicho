@@ -25,6 +25,18 @@ struct CochichoApp: App {
     }
 }
 
+/// Lightning (LNURL-pay) address donations go to — same wallet as Vitality's.
+///
+/// Public on purpose: it ships in a public repo and shows in the menu. LNURL is bech32,
+/// so it carries its own checksum — a copy-paste that loses a character fails in the
+/// wallet rather than sending anywhere.
+enum Donation {
+    static let lnurl = "lnurl1dp68gurn8ghj7ampd3kx2ar0veekzar0wd5xjtnrdakj7tnhv4kxctttdehhwm30d3h82unvwqhkyctndpn82mrrdaexkwp58q7qfu9t"
+
+    /// What desktop Lightning wallets register for.
+    static var walletURL: URL? { URL(string: "lightning:\(lnurl)") }
+}
+
 /// The menu bar icon + menu, in AppKit.
 ///
 /// Not SwiftUI's `MenuBarExtra` on purpose: on macOS 26 it presents its menu detached,
@@ -117,6 +129,22 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         open.target = self
         menu.addItem(open)
 
+        let coffeeMenu = NSMenu()
+        let openWallet = NSMenuItem(
+            title: "Abrir na carteira", action: #selector(openLightningWallet), keyEquivalent: ""
+        )
+        openWallet.target = self
+        coffeeMenu.addItem(openWallet)
+        let copyAddress = NSMenuItem(
+            title: "Copiar endereço Lightning", action: #selector(copyLightningAddress),
+            keyEquivalent: ""
+        )
+        copyAddress.target = self
+        coffeeMenu.addItem(copyAddress)
+        let coffee = NSMenuItem(title: "Buy me a coffee ☕️", action: nil, keyEquivalent: "")
+        coffee.submenu = coffeeMenu
+        menu.addItem(coffee)
+
         let quit = NSMenuItem(title: "Sair", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
@@ -131,13 +159,18 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func pickEngine(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,
               let engine = Engine(rawValue: raw) else { return }
+        Task { await ModelResidence.shared.unloadAll() }
         AppSettings.shared.engine = engine
     }
 
     @objc private func pickLanguage(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,
               let language = Language(rawValue: raw) else { return }
+        let previous = AppSettings.shared.language
         AppSettings.shared.language = language
+        if previous != language, AppSettings.shared.engine == .apple {
+            Task { await ModelResidence.shared.unloadAppleIfNeeded(keeping: language) }
+        }
     }
 
     @objc private func openDashboard() {
@@ -151,6 +184,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
             // which `handlesExternalEvents` turns into a fresh dashboard window.
             NSWorkspace.shared.open(URL(string: "cochicho://main")!)
         }
+    }
+
+    @objc private func openLightningWallet() {
+        guard let url = Donation.walletURL else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc private func copyLightningAddress() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(Donation.lnurl, forType: .string)
     }
 
     @objc private func quit() {
@@ -172,32 +215,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.sync()
         observeState()
 
+        ModelResidence.shared.dictation = controller
+
         if !controller.activate() {
             Permissions.promptForAccessibility()
             controller.rearmWhenPermitted()
         }
 
+        // Warm the stores too: the first dictation would otherwise pay the dictionary's
+        // JSON decode + regex compilation (and the history decode) inside its latency path.
+        Task(priority: .utility) {
+            _ = DictionaryStore.shared.corrector
+            _ = HistoryStore.shared.entries
+        }
+
         // Warm the chosen engine so the first dictation isn't a cold-start stall. Model
         // downloads are never triggered implicitly — those are explicit catalog buttons.
+        // Apple preheat may install locale assets via the warm cache when missing.
         switch AppSettings.shared.engine {
         case .parakeet:
             let version = AppSettings.shared.parakeetVersion
             if ParakeetModels.isDownloaded(version) {
-                Task.detached(priority: .utility) {
+                Task(priority: .utility) {
                     _ = try? await ParakeetModels.shared.manager(version: version)
+                    await ModelResidence.shared.refresh()
                 }
             }
         case .whisper:
             let model = AppSettings.shared.whisperModel
             if WhisperModels.isDownloaded(model) {
-                Task.detached(priority: .utility) {
+                Task(priority: .utility) {
                     _ = try? await WhisperModels.shared.pipe(for: model)
+                    await ModelResidence.shared.refresh()
                 }
             }
         case .apple:
             let locale = AppSettings.shared.language.locale
-            Task.detached(priority: .utility) {
+            Task(priority: .utility) {
                 await AppleSpeechEngine.preheat(locale: locale)
+                await ModelResidence.shared.refresh()
             }
         }
     }

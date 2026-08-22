@@ -87,7 +87,12 @@ final class HUDPanel: NSPanel {
             // Hop via a task instead of `MainActor.assumeIsolated` — the assertion crashes
             // the process when the runtime's executor bookkeeping is stale (seen in the
             // wild in the event-tap callback), and a one-runloop-turn delay is invisible.
-            Task { @MainActor in self?.orderOut(nil) }
+            // The alpha check keeps a stale dismissal from hiding a panel that a new
+            // dictation just re-presented.
+            Task { @MainActor in
+                guard let self, self.alphaValue == 0 else { return }
+                self.orderOut(nil)
+            }
         }
     }
 }

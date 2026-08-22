@@ -65,17 +65,20 @@ struct Stat: View {
     let label: String
     let value: String
     var color: Color = Theme.ink
+    var compact: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: compact ? 1 : 4) {
             Text(label)
-                .font(Theme.mono(9))
+                .font(Theme.mono(compact ? 8 : 9))
                 .tracking(1.5)
                 .foregroundStyle(Theme.inkFaint)
                 .textCase(.uppercase)
             Text(value)
-                .font(Theme.mono(20, .medium))
+                .font(Theme.mono(compact ? 13 : 20, .medium))
                 .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
         }
     }
 }
@@ -160,6 +163,32 @@ struct DottedRing: View {
                     .textCase(.uppercase)
             }
         }
+    }
+}
+
+/// Thin accent-filled progress bar; `fraction == nil` renders an indeterminate sweep.
+struct DownloadBar: View {
+    var fraction: Double?
+    @State private var sweep = false
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.08))
+                if let fraction {
+                    Capsule().fill(Theme.accent)
+                        .frame(width: max(3, geo.size.width * min(1, max(0, fraction))))
+                } else {
+                    Capsule().fill(Theme.accent)
+                        .frame(width: geo.size.width * 0.3)
+                        .offset(x: sweep ? geo.size.width * 0.7 : 0)
+                        .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: sweep)
+                        .onAppear { sweep = true }
+                }
+            }
+        }
+        .frame(height: 3)
+        .clipShape(Capsule())
     }
 }
 

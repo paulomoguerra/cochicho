@@ -128,13 +128,53 @@ final class AppSettings {
     var soundEnabled: Bool {
         didSet { defaults.set(soundEnabled, forKey: "soundEnabled") }
     }
-    /// User-arranged dashboard tiles: order = position, each with its size preset.
+    var dictionaryEnabled: Bool {
+        didSet { defaults.set(dictionaryEnabled, forKey: "dictionaryEnabled") }
+    }
+    var saveHistory: Bool {
+        didSet { defaults.set(saveHistory, forKey: "saveHistory") }
+    }
+    var copyToClipboard: Bool {
+        didSet { defaults.set(copyToClipboard, forKey: "copyToClipboard") }
+    }
+    var pressReturn: Bool {
+        didSet { defaults.set(pressReturn, forKey: "pressReturn") }
+    }
+    /// Active dashboard tiles: order = pack position, each with its size preset.
     var tileLayout: [TileConfig] {
         didSet {
-            if let data = try? JSONEncoder().encode(tileLayout) {
-                defaults.set(data, forKey: "tileLayout")
+            Self.persistLayout(tileLayout, key: "tileLayout", to: defaults)
+            if tileLayout == TileConfig.defaultLayout {
+                layoutSourceIsCustom = false
+                // Keep customTileLayout — PADRÃO must not erase the saved custom.
+            } else {
+                layoutSourceIsCustom = true
+                customTileLayout = tileLayout
             }
         }
+    }
+    /// Last user-customized layout; nil until the user leaves the factory arrangement.
+    var customTileLayout: [TileConfig]? {
+        didSet {
+            if let customTileLayout {
+                Self.persistLayout(customTileLayout, key: "customTileLayout", to: defaults)
+            }
+        }
+    }
+    /// True when the active layout is the saved custom rather than the factory default.
+    var layoutSourceIsCustom: Bool {
+        didSet { defaults.set(layoutSourceIsCustom, forKey: "layoutSourceIsCustom") }
+    }
+
+    var hasCustomLayout: Bool { customTileLayout != nil }
+
+    func applyDefaultLayout() {
+        tileLayout = TileConfig.defaultLayout
+    }
+
+    func applyCustomLayout() {
+        guard let custom = customTileLayout else { return }
+        tileLayout = custom
     }
 
     private init() {
@@ -147,6 +187,10 @@ final class AppSettings {
         showMenuBar = defaults.object(forKey: "showMenuBar") as? Bool ?? true
         showDock = defaults.object(forKey: "showDock") as? Bool ?? true
         soundEnabled = defaults.object(forKey: "soundEnabled") as? Bool ?? true
+        dictionaryEnabled = defaults.object(forKey: "dictionaryEnabled") as? Bool ?? true
+        saveHistory = defaults.object(forKey: "saveHistory") as? Bool ?? true
+        copyToClipboard = defaults.object(forKey: "copyToClipboard") as? Bool ?? false
+        pressReturn = defaults.object(forKey: "pressReturn") as? Bool ?? false
 
         if let data = defaults.data(forKey: "hotkey"),
            let spec = try? JSONDecoder().decode(HotkeySpec.self, from: data) {
@@ -155,15 +199,91 @@ final class AppSettings {
             hotkey = .rightOption
         }
 
-        // Any tile missing from the saved layout (say, added in an update) is appended
-        // small at the end rather than vanishing.
-        var layout = (defaults.data(forKey: "tileLayout"))
-            .flatMap { try? JSONDecoder().decode([TileConfig].self, from: $0) }
-            ?? TileConfig.defaultLayout
-        for tile in Tile.allCases where !layout.contains(where: { $0.tile == tile }) {
-            layout.append(TileConfig(tile: tile, size: .small))
+        let migrated = Self.loadTileLayouts(from: defaults)
+        customTileLayout = migrated.custom
+        layoutSourceIsCustom = migrated.sourceIsCustom
+        tileLayout = migrated.active
+        // didSet is skipped during init — persist migration / first-run snapshot explicitly.
+        Self.persistLayout(migrated.active, key: "tileLayout", to: defaults)
+        if let custom = migrated.custom {
+            Self.persistLayout(custom, key: "customTileLayout", to: defaults)
         }
-        tileLayout = layout
+        defaults.set(migrated.sourceIsCustom, forKey: "layoutSourceIsCustom")
+    }
+
+    private static func persistLayout(_ layout: [TileConfig], key: String, to defaults: UserDefaults) {
+        if let data = try? JSONEncoder().encode(layout) {
+            defaults.set(data, forKey: key)
+        }
+    }
+
+    private static func decodeLayout(key: String, from defaults: UserDefaults) -> [TileConfig]? {
+        defaults.data(forKey: key).flatMap { try? JSONDecoder().decode([TileConfig].self, from: $0) }
+    }
+
+    /// Keep first occurrence of each tile; drop later duplicates.
+    private static func dedupe(_ layout: [TileConfig]) -> [TileConfig] {
+        var seen = Set<Tile>()
+        return layout.filter { seen.insert($0.tile).inserted }
+    }
+
+    private static func appendingMissingTiles(_ layout: [TileConfig]) -> [TileConfig] {
+        var result = layout
+        for tile in Tile.allCases where !result.contains(where: { $0.tile == tile }) {
+            result.append(TileConfig(tile: tile, size: .small))
+        }
+        return result
+    }
+
+    private static func loadTileLayouts(from defaults: UserDefaults) -> (
+        active: [TileConfig], custom: [TileConfig]?, sourceIsCustom: Bool
+    ) {
+        var custom = decodeLayout(key: "customTileLayout", from: defaults).map(dedupe)
+        let saved = decodeLayout(key: "tileLayout", from: defaults).map(dedupe)
+        let hasSourceKey = defaults.object(forKey: "layoutSourceIsCustom") != nil
+
+        var active: [TileConfig]
+        var sourceIsCustom: Bool
+
+        if hasSourceKey {
+            sourceIsCustom = defaults.bool(forKey: "layoutSourceIsCustom")
+            if sourceIsCustom {
+                if let saved {
+                    active = saved
+                } else if let custom {
+                    active = custom
+                } else {
+                    active = TileConfig.defaultLayout
+                    sourceIsCustom = false
+                }
+                if custom == nil { custom = saved }
+            } else {
+                // Factory users always pick up the current default — ignore stale snapshots.
+                active = TileConfig.defaultLayout
+                sourceIsCustom = false
+            }
+        } else if let saved {
+            if saved == TileConfig.legacyDefaultLayout
+                || saved == TileConfig.previousDefaultLayout
+                || saved == TileConfig.defaultLayout
+            {
+                active = TileConfig.defaultLayout
+                sourceIsCustom = false
+            } else {
+                active = saved
+                sourceIsCustom = true
+                if custom == nil { custom = saved }
+            }
+        } else {
+            active = TileConfig.defaultLayout
+            sourceIsCustom = false
+        }
+
+        active = appendingMissingTiles(active)
+        if let existing = custom {
+            custom = appendingMissingTiles(existing)
+        }
+        return (active, custom, sourceIsCustom)
     }
 
     /// One-shot map from the old PADRÃO/MÉDIO/MÍNIMO raw values onto the renamed cases.

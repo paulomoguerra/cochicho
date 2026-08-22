@@ -1,7 +1,4 @@
-.DS_Store
 .build/
 .swiftpm/
+.DS_Store
 Support/AppIcon.iconset/
-
-# Design mockups (local only)
-.mockups/

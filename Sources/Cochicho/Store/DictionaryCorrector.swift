@@ -53,13 +53,11 @@ struct DictionaryCorrector: Sendable {
 
         for rule in rules {
             let range = NSRange(result.startIndex..., in: result)
-            let matches = rule.regex.numberOfMatches(in: result, range: range)
-            guard matches > 0 else { continue }
+            let matches = rule.regex.matches(in: result, range: range)
+            guard let first = matches.first else { continue }
 
             // Record what the engine actually produced, not the rule's trigger.
-            let firstMatch = rule.regex.firstMatch(in: result, range: range)
-            let heard = firstMatch
-                .flatMap { Range($0.range, in: result) }
+            let heard = Range(first.range, in: result)
                 .map { String(result[$0]) } ?? rule.trigger
 
             result = rule.regex.stringByReplacingMatches(
@@ -71,7 +69,7 @@ struct DictionaryCorrector: Sendable {
             applied.append(AppliedCorrection(
                 from: heard,
                 to: rule.replacement.replacingOccurrences(of: "\\", with: ""),
-                count: matches
+                count: matches.count
             ))
         }
 

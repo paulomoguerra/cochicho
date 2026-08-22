@@ -48,28 +48,35 @@ final class HistoryStore {
            let saved = try? decoder.decode([HistoryEntry].self, from: data) {
             entries = saved
         }
+        totalWords = entries.reduce(0) { $0 + $1.wordCount }
     }
 
     func record(_ entry: HistoryEntry) {
         entries.insert(entry, at: 0)
+        totalWords += entry.wordCount
         if entries.count > Self.cap {
+            for dropped in entries[Self.cap...] { totalWords -= dropped.wordCount }
             entries.removeLast(entries.count - Self.cap)
         }
         save()
     }
 
     func remove(_ entry: HistoryEntry) {
-        entries.removeAll { $0.id == entry.id }
+        guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return }
+        totalWords -= entries[index].wordCount
+        entries.remove(at: index)
         save()
     }
 
     func clear() {
         entries.removeAll()
+        totalWords = 0
         save()
     }
 
-    // Aggregates for the stats card.
-    var totalWords: Int { entries.reduce(0) { $0 + $1.wordCount } }
+    // Aggregates for the stats card. `totalWords` is kept incrementally — recomputing it
+    // re-tokenizes every stored text, and the stats card reads it on every render.
+    private(set) var totalWords = 0
     var totalSeconds: Double { entries.reduce(0) { $0 + $1.audioSeconds } }
 
     private func save() {

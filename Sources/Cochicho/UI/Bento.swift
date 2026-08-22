@@ -61,14 +61,34 @@ struct TileConfig: Codable, Equatable, Identifiable {
 
     var id: String { tile.rawValue }
 
-    /// Mirrors the fixed pre-customization dashboard.
+    /// Factory dashboard — screenshot pack (4-col first-fit).
     static let defaultLayout: [TileConfig] = [
+        TileConfig(tile: .mic, size: .wide),
+        TileConfig(tile: .engine, size: .tall),
+        TileConfig(tile: .controls, size: .tall),
+        TileConfig(tile: .history, size: .big),
+        TileConfig(tile: .dictionary, size: .tall),
+        TileConfig(tile: .stats, size: .small),
+    ]
+
+    /// Pre-preset factory layout — migration only; do not use as the live default.
+    static let legacyDefaultLayout: [TileConfig] = [
         TileConfig(tile: .mic, size: .wide),
         TileConfig(tile: .engine, size: .tall),
         TileConfig(tile: .stats, size: .small),
         TileConfig(tile: .history, size: .big),
         TileConfig(tile: .dictionary, size: .tall),
         TileConfig(tile: .controls, size: .tall),
+    ]
+
+    /// Brief mic-big factory shipped between legacy and current — migration equality only.
+    static let previousDefaultLayout: [TileConfig] = [
+        TileConfig(tile: .mic, size: .big),
+        TileConfig(tile: .engine, size: .tall),
+        TileConfig(tile: .controls, size: .tall),
+        TileConfig(tile: .history, size: .big),
+        TileConfig(tile: .dictionary, size: .tall),
+        TileConfig(tile: .stats, size: .small),
     ]
 }
 
@@ -92,13 +112,23 @@ struct BentoLayout: Layout {
     var rowHeight: CGFloat = 234
 
     struct Cache {
+        /// Width the frames were computed for; -1 forces a recompute.
+        var width: CGFloat = -1
         var frames: [CGRect] = []
         var totalRows = 0
     }
 
     func makeCache(subviews: Subviews) -> Cache { Cache() }
 
+    /// SwiftUI calls this whenever the subviews (or their layout values) change —
+    /// invalidate so a span/order change recomputes even at the same width.
+    func updateCache(_ cache: inout Cache, subviews: Subviews) {
+        cache.width = -1
+    }
+
     private func computePlacement(width: CGFloat, subviews: Subviews, cache: inout Cache) {
+        guard width != cache.width else { return }
+        cache.width = width
         let cellWidth = (width - spacing * CGFloat(columns - 1)) / CGFloat(columns)
         var occupied: [[Bool]] = []
         cache.frames = []

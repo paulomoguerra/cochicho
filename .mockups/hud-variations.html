@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cochicho — variações do HUD</title>
+  <style>
+    :root {
+      --bg: rgb(19, 18, 17);
+      --card: rgb(29, 28, 27);
+      --card-hud: rgba(29, 28, 27, 0.96);
+      --border: rgba(255, 255, 255, 0.06);
+      --ink: rgb(237, 232, 224);
+      --ink-dim: rgba(255, 255, 255, 0.42);
+      --ink-faint: rgba(255, 255, 255, 0.22);
+      --accent: rgb(255, 69, 0);
+      --ok: rgb(89, 217, 140);
+      --dot-on: rgba(237, 232, 224, 0.85);
+      --dot-off: rgba(255, 255, 255, 0.08);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace;
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100vh;
+      padding: 28px 24px 72px;
+    }
+
+    header {
+      max-width: 1180px;
+      margin: 0 auto 22px;
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    header .num { color: var(--ink-faint); font-size: 11px; letter-spacing: 0.12em; }
+    header h1 {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--ink-dim);
+    }
+    header p {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--ink-faint);
+      letter-spacing: 0.08em;
+    }
+
+    .grid {
+      max-width: 1180px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+    .option {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .option.selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+
+    .meta {
+      padding: 16px 18px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .meta .row { display: flex; align-items: center; gap: 10px; }
+    .meta .label {
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--ink-dim);
+    }
+    .meta .badge {
+      margin-left: auto;
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .meta .dims {
+      font-size: 11px;
+      color: var(--ink-faint);
+      letter-spacing: 0.06em;
+    }
+    .meta .blurb {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      line-height: 1.4;
+      color: var(--ink-dim);
+      margin-top: 2px;
+    }
+
+    /* Desktop stage — same vibe as dashboard bg */
+    .stage {
+      position: relative;
+      margin: 0 12px;
+      height: 220px;
+      border-radius: 14px;
+      background:
+        radial-gradient(ellipse at 50% 0%, rgba(255,69,0,0.05), transparent 55%),
+        linear-gradient(180deg, #161513 0%, #0e0d0c 100%);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: 28px;
+      overflow: hidden;
+    }
+    .stage::before {
+      content: "DESKTOP";
+      position: absolute;
+      top: 12px;
+      left: 14px;
+      font-size: 9px;
+      letter-spacing: 0.2em;
+      color: var(--ink-faint);
+    }
+
+    /* —— HUD shells —— */
+    .hud {
+      background: var(--card-hud);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.45);
+    }
+
+    .hud-top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+      flex-shrink: 0;
+    }
+    .hud-status {
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--ink-dim);
+    }
+    .hud-brand {
+      margin-left: auto;
+      font-size: 8px;
+      font-weight: 500;
+      letter-spacing: 0.2em;
+      color: var(--ink-faint);
+    }
+    .hud-text {
+      font-size: 10px;
+      color: var(--ink);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+    .hud-text.wrap {
+      white-space: normal;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+      overflow: hidden;
+      line-height: 1.45;
+    }
+
+    /* Dot-matrix waveform — mirrors DotWaveform */
+    .wave {
+      display: grid;
+      gap: 2px;
+      align-content: end;
+      height: 26px;
+    }
+    .wave .col {
+      display: grid;
+      grid-template-rows: repeat(var(--rows, 5), 1fr);
+      gap: 2px;
+      height: 100%;
+    }
+    .wave .cell {
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background: var(--dot-off);
+    }
+    .wave .cell.on { background: var(--dot-on); }
+    .wave .cell.hot { background: var(--accent); }
+    .wave .cell.mid { background: rgba(255, 255, 255, 0.14); }
+
+    /* Size / layout variants */
+    .v-compact .hud { width: 260px; padding: 10px 14px; border-radius: 14px; }
+    .v-compact .wave { height: 16px; }
+    .v-compact .hud-brand { display: none; }
+
+    .v-medium .hud { width: 380px; }
+
+    .v-large .hud { width: 520px; padding: 14px 18px; gap: 8px; }
+    .v-large .wave { height: 36px; }
+    .v-large .hud-text { font-size: 12px; }
+
+    .v-wide .hud {
+      width: min(640px, 92%);
+      flex-direction: row;
+      align-items: center;
+      gap: 14px;
+      padding: 10px 16px;
+      border-radius: 999px;
+    }
+    .v-wide .hud-top { flex: 0 0 auto; min-width: 110px; }
+    .v-wide .wave { flex: 1; height: 18px; }
+    .v-wide .hud-text { flex: 0 1 180px; font-size: 10px; }
+
+    .v-focus .hud { width: 440px; gap: 10px; }
+    .v-focus .wave { height: 14px; opacity: 0.7; }
+    .v-focus .hud-text {
+      font-size: 14px;
+      white-space: normal;
+      line-height: 1.4;
+      -webkit-line-clamp: 2;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+    }
+
+    .v-minimal .hud {
+      width: auto;
+      flex-direction: row;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 12px 8px 14px;
+      border-radius: 999px;
+    }
+    .v-minimal .hud-top { gap: 0; }
+    .v-minimal .hud-status,
+    .v-minimal .hud-brand,
+    .v-minimal .hud-text { display: none; }
+    .v-minimal .wave { width: 120px; height: 14px; }
+
+    .actions { padding: 14px 18px 18px; margin-top: auto; }
+    button.pick {
+      width: 100%;
+      appearance: none;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--ink);
+      font: inherit;
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      padding: 12px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: border-color .15s, color .15s, background .15s;
+    }
+    button.pick:hover { border-color: rgba(255,69,0,0.55); color: var(--accent); }
+    .option.selected button.pick {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #120c08;
+      font-weight: 600;
+    }
+
+    footer {
+      max-width: 1180px;
+      margin: 22px auto 0;
+      font-size: 11px;
+      color: var(--ink-faint);
+      letter-spacing: 0.08em;
+    }
+    footer strong { color: var(--ink-dim); font-weight: 500; }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="num">02</span>
+    <h1>HUD · variações</h1>
+    <p>mesma identidade · Theme + DotWaveform</p>
+  </header>
+
+  <div class="grid" id="grid"></div>
+  <footer>Selecionado: <strong id="choice">nenhum</strong></footer>
+
+  <script>
+    const SAMPLE = "vamos testar o tamanho do popup enquanto estou gravando";
+
+    // Pseudo audio levels → lit cells per column (0..rows)
+    const LEVELS = [
+      1,2,3,2,4,5,3,2,1,2,4,5,4,3,2,3,5,4,3,2,
+      1,2,3,4,5,4,3,2,1,2,3,4,3,2,4,5,4,2,1,2,
+      3,4,5,4,3,2,1,2,3,4,5,3,2,1,2,3,4,3,2,1
+    ];
+
+    // Mirrors Theme.DotWaveform: lights expand from the middle row outward.
+    function waveHTML(cols, rows) {
+      const mid = Math.floor(rows / 2);
+      let html = `<div class="wave" style="grid-template-columns:repeat(${cols},3px);justify-content:space-between;--rows:${rows}">`;
+      for (let c = 0; c < cols; c++) {
+        const level = (LEVELS[c % LEVELS.length] / 5); // 0..1-ish
+        const lit = Math.round(level * rows);
+        html += `<div class="col">`;
+        for (let r = 0; r < rows; r++) {
+          const distance = Math.abs(r - mid);
+          const on = lit > 0 && distance <= Math.floor(lit / 2);
+          const midIdle = r === mid && !on;
+          let cls = "cell";
+          if (on && level > 0.6) cls = "cell on hot";
+          else if (on) cls = "cell on";
+          else if (midIdle) cls = "cell mid";
+          html += `<div class="${cls}"></div>`;
+        }
+        html += `</div>`;
+      }
+      html += `</div>`;
+      return html;
+    }
+
+    const variants = [
+      {
+        id: "compact",
+        name: "Compacto",
+        dims: "~260 × 52",
+        blurb: "Pílula enxuta. Sem brand, sem transcript — só status + waveform.",
+        stageClass: "v-compact",
+        render() {
+          return `
+            <div class="hud">
+              <div class="hud-top">
+                <span class="dot"></span>
+                <span class="hud-status">Ouvindo</span>
+                <span class="hud-brand">COCHICHO</span>
+              </div>
+              ${waveHTML(32, 5)}
+            </div>`;
+        }
+      },
+      {
+        id: "medium",
+        name: "Médio",
+        badge: "atual",
+        dims: "~380 × 84",
+        blurb: "Layout de hoje: header + matrix 44×5 + 1 linha de preview.",
+        stageClass: "v-medium",
+        render() {
+          return `
+            <div class="hud">
+              <div class="hud-top">
+                <span class="dot"></span>
+                <span class="hud-status">Ouvindo</span>
+                <span class="hud-brand">COCHICHO</span>
+              </div>
+              ${waveHTML(44, 5)}
+              <div class="hud-text">${SAMPLE}</div>
+            </div>`;
+        }
+      },
+      {
+        id: "large",
+        name: "Grande",
+        dims: "~520 × 140",
+        blurb: "Mesmo chrome, mais ar. Waveform alto + 3 linhas de transcript.",
+        stageClass: "v-large",
+        render() {
+          return `
+            <div class="hud">
+              <div class="hud-top">
+                <span class="dot"></span>
+                <span class="hud-status">Ouvindo</span>
+                <span class="hud-brand">COCHICHO</span>
+              </div>
+              ${waveHTML(56, 7)}
+              <div class="hud-text wrap">${SAMPLE} uma transcrição</div>
+            </div>`;
+        }
+      },
+      {
+        id: "wide",
+        name: "Barra",
+        dims: "~640 × 40",
+        blurb: "Faixa horizontal tipo Dock. Status | waveform | preview numa linha.",
+        stageClass: "v-wide",
+        render() {
+          return `
+            <div class="hud">
+              <div class="hud-top">
+                <span class="dot"></span>
+                <span class="hud-status">Ouvindo</span>
+              </div>
+              ${waveHTML(48, 5)}
+              <div class="hud-text">${SAMPLE}</div>
+            </div>`;
+        }
+      },
+      {
+        id: "focus",
+        name: "Foco texto",
+        dims: "~440 × 100",
+        blurb: "Transcript grande, waveform fino. Pra quem lê enquanto fala.",
+        stageClass: "v-focus",
+        render() {
+          return `
+            <div class="hud">
+              <div class="hud-top">
+                <span class="dot"></span>
+                <span class="hud-status">Ouvindo</span>
+                <span class="hud-brand">COCHICHO</span>
+              </div>
+              <div class="hud-text">${SAMPLE}</div>
+              ${waveHTML(44, 5)}
+            </div>`;
+        }
+      },
+      {
+        id: "minimal",
+        name: "Mínimo",
+        dims: "~160 × 32",
+        blurb: "Só o ponto laranja + strip de dots. Quase invisível.",
+        stageClass: "v-minimal",
+        render() {
+          return `
+            <div class="hud">
+              <div class="hud-top"><span class="dot"></span></div>
+              ${waveHTML(28, 5)}
+            </div>`;
+        }
+      }
+    ];
+
+    const grid = document.getElementById("grid");
+    const choice = document.getElementById("choice");
+
+    variants.forEach((v) => {
+      const el = document.createElement("article");
+      el.className = "option";
+      el.dataset.id = v.id;
+      el.innerHTML = `
+        <div class="meta">
+          <div class="row">
+            <span class="label">${v.name}</span>
+            ${v.badge ? `<span class="badge">${v.badge}</span>` : ""}
+          </div>
+          <div class="dims">${v.dims}</div>
+          <p class="blurb">${v.blurb}</p>
+        </div>
+        <div class="stage ${v.stageClass}">${v.render()}</div>
+        <div class="actions"><button class="pick" type="button">Escolher</button></div>
+      `;
+      el.querySelector("button").addEventListener("click", () => {
+        document.querySelectorAll(".option").forEach((o) => o.classList.remove("selected"));
+        el.classList.add("selected");
+        choice.textContent = v.name;
+      });
+      grid.appendChild(el);
+    });
+  </script>
+</body>
+</html>

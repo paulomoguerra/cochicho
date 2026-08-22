@@ -13,7 +13,7 @@ struct ControlsCard: View {
 
     var body: some View {
         Card {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: size.isRoomy ? 8 : 12) {
                 CardHeader(number: "06", title: "CONTROLES")
 
                 // Hotkey picker: presets + free capture.
@@ -75,13 +75,36 @@ struct ControlsCard: View {
                 if size.isRoomy {
                     Divider().overlay(Theme.cardBorder)
 
-                    FlagRow(label: "ÍCONE NA MENUBAR", isOn: menuBarBinding)
-                    FlagRow(label: "ÍCONE NO DOCK", isOn: dockBinding)
-                    FlagRow(label: "ABRIR AO INICIAR", isOn: launchAtLoginBinding)
-                    FlagRow(label: "SONS", isOn: Binding(
-                        get: { settings.soundEnabled },
-                        set: { settings.soundEnabled = $0 }
-                    ))
+                    VStack(alignment: .leading, spacing: 8) {
+                        FlagRow(label: "ÍCONE NA MENUBAR", isOn: menuBarBinding)
+                        FlagRow(label: "ÍCONE NO DOCK", isOn: dockBinding)
+                        FlagRow(label: "ABRIR AO INICIAR", isOn: launchAtLoginBinding)
+                        FlagRow(label: "SONS", isOn: Binding(
+                            get: { settings.soundEnabled },
+                            set: { settings.soundEnabled = $0 }
+                        ))
+
+                        Divider().overlay(Theme.cardBorder)
+
+                        Text("COMPORTAMENTO")
+                            .font(Theme.mono(9)).tracking(1.5).foregroundStyle(Theme.inkFaint)
+                        FlagRow(label: "CORRIGIR COM DICIONÁRIO", isOn: Binding(
+                            get: { settings.dictionaryEnabled },
+                            set: { settings.dictionaryEnabled = $0 }
+                        ))
+                        FlagRow(label: "SALVAR NO HISTÓRICO", isOn: Binding(
+                            get: { settings.saveHistory },
+                            set: { settings.saveHistory = $0 }
+                        ))
+                        FlagRow(label: "COPIAR TEXTO", isOn: Binding(
+                            get: { settings.copyToClipboard },
+                            set: { settings.copyToClipboard = $0 }
+                        ))
+                        FlagRow(label: "ENTER AO INSERIR", isOn: Binding(
+                            get: { settings.pressReturn },
+                            set: { settings.pressReturn = $0 }
+                        ))
+                    }
                 }
 
                 if !controller.hotkeyArmed {

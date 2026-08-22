@@ -122,27 +122,57 @@ actor ParakeetModels {
 
     nonisolated static var isDownloaded: Bool { isDownloaded(.v3) }
 
+    /// Where FluidAudio keeps a version's models on disk.
+    nonisolated static func cacheFolder(_ version: ParakeetVersion) -> URL {
+        AsrModels.defaultCacheDirectory(for: version.asrVersion)
+    }
+
+    /// Actual bytes on disk for a version's models — shown on the Engine card.
+    static func diskSize(of version: ParakeetVersion) async -> Int64 {
+        await directorySize(at: cacheFolder(version))
+    }
+
     /// One loaded manager at a time — a 0.6B model is not worth keeping twice in RAM
     /// just because the user flipped versions.
     private var loaded: (version: ParakeetVersion, manager: AsrManager)?
     private var loadTask: (version: ParakeetVersion, task: Task<AsrManager, Error>)?
 
+    var loadedVersion: ParakeetVersion? { loaded?.version }
+    var isLoading: Bool { loadTask != nil }
+    func isLoaded(_ version: ParakeetVersion) -> Bool { loaded?.version == version }
+
+    /// Drop manager from RAM; does not delete disk files.
+    func unload() {
+        loaded = nil
+        loadTask?.task.cancel()
+        loadTask = nil
+        Log.speech.info("Parakeet: unloaded from RAM")
+    }
+
     /// Removes a version's models from disk (and RAM, if loaded).
     func delete(_ version: ParakeetVersion) {
         if loaded?.version == version { loaded = nil }
-        loadTask = nil
-        try? FileManager.default.removeItem(
-            at: AsrModels.defaultCacheDirectory(for: version.asrVersion)
-        )
+        if loadTask?.version == version {
+            loadTask?.task.cancel()
+            loadTask = nil
+        }
+        try? FileManager.default.removeItem(at: Self.cacheFolder(version))
         Log.speech.info("Parakeet: deleted \(version.rawValue, privacy: .public)")
     }
 
     /// Loads once per version; concurrent callers await the same task rather than racing
-    /// to download.
-    func manager(version: ParakeetVersion = .v3) async throws -> AsrManager {
+    /// to download. `progress` reports download + compile fractions (0…1) when given —
+    /// only the caller that starts the load gets reports.
+    func manager(
+        version: ParakeetVersion = .v3,
+        progress: (@Sendable (Double) -> Void)? = nil
+    ) async throws -> AsrManager {
         if let loaded, loaded.version == version { return loaded.manager }
         if let loadTask, loadTask.version == version { return try await loadTask.task.value }
 
+        // Drop the previous resident before starting a different version's load.
+        loaded = nil
+        loadTask?.task.cancel()
         loadTask = nil
         let task = Task<AsrManager, Error> {
             let stage = Self.isDownloaded(version)
@@ -151,7 +181,10 @@ actor ParakeetModels {
             Log.speech.info("Parakeet \(version.rawValue, privacy: .public): \(stage, privacy: .public)")
             let started = Date()
             let models = try await AsrModels.downloadAndLoad(
-                version: version.asrVersion, encoderPrecision: .int8
+                version: version.asrVersion, encoderPrecision: .int8,
+                progressHandler: progress.map { report in
+                    { @Sendable snapshot in report(snapshot.fractionCompleted) }
+                }
             )
             let manager = AsrManager(config: .default)
             try await manager.loadModels(models)

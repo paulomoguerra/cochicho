@@ -1,3 +1,5 @@
+import AppKit
+import Speech
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -129,8 +131,16 @@ struct DashboardView: View {
                 }
 
                 if editingLayout {
-                    Button("PADRÃO") { settings.tileLayout = TileConfig.defaultLayout }
-                        .buttonStyle(PillButtonStyle())
+                    Button("PADRÃO") {
+                        withAnimation(.spring(duration: 0.3)) { settings.applyDefaultLayout() }
+                    }
+                    .buttonStyle(PillButtonStyle(prominent: !settings.layoutSourceIsCustom))
+                    if settings.hasCustomLayout {
+                        Button("MEU") {
+                            withAnimation(.spring(duration: 0.3)) { settings.applyCustomLayout() }
+                        }
+                        .buttonStyle(PillButtonStyle(prominent: settings.layoutSourceIsCustom))
+                    }
                 }
                 Button(editingLayout ? "PRONTO" : "LAYOUT") { editingLayout.toggle() }
                     .buttonStyle(PillButtonStyle(prominent: editingLayout))
@@ -287,6 +297,7 @@ struct EngineCard: View {
     let controller: DictationController
     var size: TileSize = .tall
     private var settings: AppSettings { .shared }
+    private var residence: ModelResidence { .shared }
 
     /// Whisper catalog — seeded with the curated list, replaced by the live Hugging Face
     /// listing (device-compatible models only) once it loads.
@@ -297,40 +308,98 @@ struct EngineCard: View {
     @State private var parakeetDownloading = false
     /// Measured on-disk bytes per downloaded model; refreshed after download/delete.
     @State private var diskSizes: [String: Int64] = [:]
+    /// Measured on-disk bytes per Parakeet version; refreshed with `diskVersion`.
+    @State private var parakeetDiskSizes: [ParakeetVersion: Int64] = [:]
+    /// BCP-47 ids of the Apple speech locales already installed on the system.
+    @State private var installedLocaleIDs: Set<String> = []
     /// Bumped after a download or delete so the `isDownloaded` disk checks re-run.
     @State private var diskVersion = 0
+    /// Sub-tile listing everything on disk, toggled by the ↓ pill.
+    @State private var showingDownloads = false
 
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
                 CardHeader(number: "02", title: "ENGINE")
 
-                SegmentPicker(
-                    options: [(Engine.apple, "APPLE"), (Engine.parakeet, "PARAKEET"), (Engine.whisper, "WHISPER")],
-                    selection: Binding(
-                        get: { settings.engine },
-                        set: { settings.engine = $0 }
+                HStack(spacing: 4) {
+                    SegmentPicker(
+                        options: [(Engine.apple, "APPLE"), (Engine.parakeet, "PARAKEET"), (Engine.whisper, "WHISPER")],
+                        selection: Binding(
+                            get: { settings.engine },
+                            set: { new in
+                                showingDownloads = false
+                                Task { await ModelResidence.shared.unloadAll() }
+                                settings.engine = new
+                            }
+                        )
                     )
-                )
+                    if size != .small { downloadsPill }
+                }
 
-                switch settings.engine {
-                case .apple: appleSection
-                case .parakeet: parakeetSection
-                case .whisper: whisperSection
+                if showingDownloads, size != .small {
+                    downloadsSection
+                } else {
+                    if size != .small {
+                        Text(engineCaption)
+                            .font(Theme.mono(8)).tracking(1).foregroundStyle(Theme.inkFaint)
+                    }
+
+                    switch settings.engine {
+                    case .apple: appleSection
+                    case .parakeet: parakeetSection
+                    case .whisper: whisperSection
+                    }
                 }
             }
         }
-        .task { catalog = await WhisperModels.availableModels() }
+        .task {
+            catalog = await WhisperModels.availableModels()
+            await residence.refresh()
+        }
         .task(id: diskVersion) { await measureDiskSizes() }
+        // Re-check when CARREGAR installs a locale's assets via the warm hold.
+        .task(id: residence.appleLoadedLocaleID) {
+            installedLocaleIDs = Set(
+                await SpeechTranscriber.installedLocales.map { $0.identifier(.bcp47) }
+            )
+        }
     }
 
     // MARK: - Apple
 
     private var appleSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if size != .small { languagePicker }
+            if size != .small {
+                languagePicker
+                appleAssetsLine
+            }
             Spacer()
-            statusLine("MODELO DO SISTEMA · NEURAL ENGINE")
+            if size.isRoomy { performanceRow }
+            if size != .small {
+                residenceFooter(diskLabel: "MODELO DO SISTEMA", canLoad: true)
+            } else {
+                statusLine("MODELO DO SISTEMA · NEURAL ENGINE")
+            }
+        }
+    }
+
+    /// Which locales' speech assets the OS already holds on disk.
+    private var appleAssetsLine: some View {
+        HStack(spacing: 12) {
+            Text("MODELOS")
+                .font(Theme.mono(9)).tracking(1.5).foregroundStyle(Theme.inkFaint)
+            ForEach(Language.allCases, id: \.self) { language in
+                let installed = installedLocaleIDs.contains(language.locale.identifier(.bcp47))
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(installed ? Theme.ok : Color.white.opacity(0.15))
+                        .frame(width: 5, height: 5)
+                    Text(language.rawValue.uppercased())
+                        .font(Theme.mono(8)).tracking(1)
+                        .foregroundStyle(installed ? Theme.inkDim : Theme.inkFaint)
+                }
+            }
         }
     }
 
@@ -346,7 +415,13 @@ struct EngineCard: View {
                 options: ParakeetVersion.allCases.map { ($0, $0.displayName) },
                 selection: Binding(
                     get: { settings.parakeetVersion },
-                    set: { settings.parakeetVersion = $0 }
+                    set: { new in
+                        let previous = settings.parakeetVersion
+                        settings.parakeetVersion = new
+                        if previous != new {
+                            Task { await ModelResidence.shared.unloadParakeetIfNeeded(keeping: new) }
+                        }
+                    }
                 )
             )
             if size != .small {
@@ -358,38 +433,182 @@ struct EngineCard: View {
 
             Spacer()
 
+            if size.isRoomy { performanceRow }
+
             let _ = diskVersion
             if ParakeetModels.isDownloaded(settings.parakeetVersion) {
-                HStack {
+                if size != .small {
+                    residenceFooter(
+                        diskLabel: parakeetDiskLabel,
+                        canLoad: true,
+                        showDelete: true
+                    )
+                    if size.isRoomy { parakeetDiskFooter }
+                } else {
                     statusLine("PARAKEET \(settings.parakeetVersion.rawValue.uppercased()) · LOCAL")
-                    Spacer()
-                    if size.isRoomy {
-                        Button("EXCLUIR") {
-                            let version = settings.parakeetVersion
-                            Task {
-                                await ParakeetModels.shared.delete(version)
-                                diskVersion += 1
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .font(Theme.mono(8, .medium)).tracking(1)
-                        .foregroundStyle(Theme.inkFaint)
-                    }
                 }
             } else {
-                Button(parakeetDownloading ? "BAIXANDO…" : "BAIXAR MODELO (~470 MB)") {
+                Button(parakeetDownloading || residence.phase == .loading
+                       ? "BAIXANDO…" : "BAIXAR MODELO (~470 MB)") {
                     parakeetDownloading = true
-                    let version = settings.parakeetVersion
                     Task {
-                        _ = try? await ParakeetModels.shared.manager(version: version)
+                        await ModelResidence.shared.loadSelected()
                         parakeetDownloading = false
                         diskVersion += 1
                     }
                 }
                 .buttonStyle(PillButtonStyle())
-                .disabled(parakeetDownloading)
+                .disabled(parakeetDownloading || residence.isBusy || controller.state.isActive)
+            }
+
+            if let fraction = residence.downloadProgress {
+                DownloadBar(fraction: fraction)
             }
         }
+    }
+
+    // MARK: - Downloads sub-tile
+
+    private var downloadsPill: some View {
+        Button("↓") {
+            showingDownloads.toggle()
+        }
+        .buttonStyle(.plain)
+        .font(Theme.mono(10, .medium))
+        .foregroundStyle(showingDownloads ? Color.black : Theme.inkDim)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(showingDownloads ? Theme.accent : Color.white.opacity(0.06))
+        .clipShape(Capsule())
+        .help("Modelos baixados")
+    }
+
+    private var downloadsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    let _ = diskVersion
+                    downloadGroup("APPLE") {
+                        let installed = Language.allCases.filter {
+                            installedLocaleIDs.contains($0.locale.identifier(.bcp47))
+                        }
+                        if installed.isEmpty {
+                            downloadRow(name: "NENHUM", detail: nil)
+                        } else {
+                            ForEach(installed, id: \.self) { language in
+                                downloadRow(name: language.rawValue.uppercased(), detail: "SISTEMA")
+                            }
+                        }
+                    }
+                    downloadGroup("PARAKEET") {
+                        let versions = ParakeetVersion.allCases.filter { ParakeetModels.isDownloaded($0) }
+                        if versions.isEmpty {
+                            downloadRow(name: "NENHUM", detail: nil)
+                        } else {
+                            ForEach(versions, id: \.self) { version in
+                                downloadRow(
+                                    name: version.displayName,
+                                    detail: parakeetDiskSizes[version].map(Self.formatBytes),
+                                    inRAM: residence.parakeetLoaded == version,
+                                    onDelete: { deleteParakeet(version) }
+                                )
+                            }
+                        }
+                    }
+                    downloadGroup("WHISPER") {
+                        let models = catalog.filter { WhisperModels.isDownloaded($0) }
+                        if models.isEmpty {
+                            downloadRow(name: "NENHUM", detail: nil)
+                        } else {
+                            ForEach(models, id: \.self) { model in
+                                downloadRow(
+                                    name: WhisperModels.displayName(model),
+                                    detail: diskSizes[model].map(Self.formatBytes),
+                                    inRAM: residence.whisperLoaded == model,
+                                    onDelete: { delete(model) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            HStack {
+                let total = diskSizes.values.reduce(0, +) + parakeetDiskSizes.values.reduce(0, +)
+                statusLine("TOTAL EM DISCO: \(Self.formatBytes(total))", color: Theme.inkDim)
+                Spacer()
+                finderButton(WhisperModels.downloadBase)
+            }
+        }
+    }
+
+    private func downloadGroup(_ title: String, @ViewBuilder rows: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(Theme.mono(9)).tracking(1.5).foregroundStyle(Theme.inkFaint)
+            rows()
+        }
+    }
+
+    private func downloadRow(
+        name: String,
+        detail: String?,
+        inRAM: Bool = false,
+        onDelete: (() -> Void)? = nil
+    ) -> some View {
+        HStack(spacing: 6) {
+            Text(name)
+                .font(Theme.mono(9, .medium))
+                .foregroundStyle(Theme.ink)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            if let detail {
+                Text(detail)
+                    .font(Theme.mono(8)).foregroundStyle(Theme.inkFaint)
+            }
+            if inRAM {
+                Text("RAM")
+                    .font(Theme.mono(8, .semibold)).foregroundStyle(Theme.ok)
+            }
+            if let onDelete {
+                Button("×", action: onDelete)
+                    .buttonStyle(.plain)
+                    .font(Theme.mono(10)).foregroundStyle(Theme.inkFaint)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.white.opacity(0.03))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func deleteParakeet(_ version: ParakeetVersion) {
+        Task {
+            await ParakeetModels.shared.delete(version)
+            diskVersion += 1
+            await ModelResidence.shared.refresh()
+        }
+    }
+
+    private var parakeetDiskLabel: String {
+        let base = "PARAKEET \(settings.parakeetVersion.rawValue.uppercased())"
+        guard let bytes = parakeetDiskSizes[settings.parakeetVersion], bytes > 0 else { return base }
+        return "\(base) · \(Self.formatBytes(bytes))"
+    }
+
+    private var parakeetDiskFooter: some View {
+        HStack {
+            let total = parakeetDiskSizes.values.reduce(0, +)
+            statusLine("USO EM DISCO: \(Self.formatBytes(total))", color: Theme.inkDim)
+            Spacer()
+            finderButton(ParakeetModels.cacheFolder(settings.parakeetVersion))
+        }
+    }
+
+    private var parakeetDeleteButton: some View {
+        Button("EXCLUIR") { deleteParakeet(settings.parakeetVersion) }
+            .buttonStyle(.plain)
+            .font(Theme.mono(8, .medium)).tracking(1)
+            .foregroundStyle(Theme.inkFaint)
     }
 
     // MARK: - Whisper
@@ -415,6 +634,11 @@ struct EngineCard: View {
                         }
                     }
                 }
+                if size.isRoomy { performanceRow }
+                residenceFooter(
+                    diskLabel: WhisperModels.displayName(settings.whisperModel),
+                    canLoad: WhisperModels.isDownloaded(settings.whisperModel)
+                )
                 if size.isRoomy {
                     diskUsageFooter
                 }
@@ -425,6 +649,7 @@ struct EngineCard: View {
     private func whisperRow(_ model: String) -> some View {
         let downloaded = WhisperModels.isDownloaded(model)
         let selected = settings.whisperModel == model
+        let inRAM = residence.whisperLoaded == model
 
         return HStack(spacing: 6) {
             Text(WhisperModels.displayName(model))
@@ -445,13 +670,18 @@ struct EngineCard: View {
             }
 
             if downloadingModel == model {
+                DownloadBar(fraction: downloadProgress)
+                    .frame(width: 48)
                 Text("\(Int(downloadProgress * 100))%")
                     .font(Theme.mono(8, .medium)).foregroundStyle(Theme.accent)
             } else if failedModel == model {
                 Text("ERRO ↻")
                     .font(Theme.mono(8, .medium)).foregroundStyle(Theme.accent)
             } else {
-                if selected {
+                if inRAM {
+                    Text("RAM")
+                        .font(Theme.mono(8, .semibold)).foregroundStyle(Theme.ok)
+                } else if selected {
                     Text("✓")
                         .font(Theme.mono(9, .semibold)).foregroundStyle(Theme.accent)
                 }
@@ -476,15 +706,20 @@ struct EngineCard: View {
     private var diskUsageFooter: some View {
         let total = diskSizes.values.reduce(0, +)
         return HStack {
-            statusLine("USO EM DISCO: \(Self.formatBytes(total))")
+            statusLine("USO EM DISCO: \(Self.formatBytes(total))", color: Theme.inkDim)
             Spacer()
+            finderButton(WhisperModels.downloadBase)
         }
     }
 
     private func tapped(_ model: String, downloaded: Bool) {
         guard downloadingModel == nil else { return }
         if downloaded {
+            let previous = settings.whisperModel
             settings.whisperModel = model
+            if previous != model {
+                Task { await ModelResidence.shared.unloadWhisperIfNeeded(keeping: model) }
+            }
             return
         }
         failedModel = nil
@@ -495,13 +730,18 @@ struct EngineCard: View {
                 try await WhisperModels.shared.download(model) { fraction in
                     Task { @MainActor in downloadProgress = fraction }
                 }
+                let previous = settings.whisperModel
                 settings.whisperModel = model
+                if previous != model {
+                    await ModelResidence.shared.unloadWhisperIfNeeded(keeping: model)
+                }
             } catch {
                 Log.speech.error("Whisper download failed: \(error.localizedDescription)")
                 failedModel = model
             }
             downloadingModel = nil
             diskVersion += 1
+            await ModelResidence.shared.refresh()
         }
     }
 
@@ -515,16 +755,80 @@ struct EngineCard: View {
                 settings.whisperModel = remaining ?? "openai_whisper-base"
             }
             diskVersion += 1
+            await ModelResidence.shared.refresh()
         }
     }
 
     private func measureDiskSizes() async {
         let models = catalog.filter { WhisperModels.isDownloaded($0) }
-        var sizes: [String: Int64] = [:]
-        for model in models {
-            sizes[model] = await WhisperModels.diskSize(of: model)
+        diskSizes = await withTaskGroup(of: (String, Int64).self) { group in
+            for model in models {
+                group.addTask { (model, await WhisperModels.diskSize(of: model)) }
+            }
+            var sizes: [String: Int64] = [:]
+            for await (model, bytes) in group { sizes[model] = bytes }
+            return sizes
         }
-        diskSizes = sizes
+
+        var parakeet: [ParakeetVersion: Int64] = [:]
+        for version in ParakeetVersion.allCases where ParakeetModels.isDownloaded(version) {
+            parakeet[version] = await ParakeetModels.diskSize(of: version)
+        }
+        parakeetDiskSizes = parakeet
+    }
+
+    // MARK: - Performance & shared chrome
+
+    private var engineCaption: String {
+        switch settings.engine {
+        case .apple: "STREAMING · TEXTO AO VIVO NO HUD"
+        case .parakeet: "LOTE · TRANSCREVE AO SOLTAR · NEURAL ENGINE"
+        case .whisper: "LOTE · CATÁLOGO OPENAI · COREML"
+        }
+    }
+
+    /// Latency of the selected engine, measured from its own last 50 history entries.
+    private var performance: (last: Double, average: Double, speed: Double?)? {
+        let name = settings.engine.displayName
+        let recent = HistoryStore.shared.entries.filter { $0.engine == name }.prefix(50)
+        guard let latest = recent.first else { return nil }
+        let proc = recent.reduce(0.0) { $0 + $1.processSeconds }
+        let audio = recent.reduce(0.0) { $0 + $1.audioSeconds }
+        return (
+            last: latest.processSeconds,
+            average: proc / Double(recent.count),
+            speed: proc > 0 ? audio / proc : nil
+        )
+    }
+
+    @ViewBuilder
+    private var performanceRow: some View {
+        if let perf = performance {
+            HStack(alignment: .top, spacing: 16) {
+                Stat(label: "ÚLTIMA", value: procText(perf.last), compact: true)
+                Stat(label: "MÉDIA", value: procText(perf.average), compact: true)
+                if let speed = perf.speed {
+                    Stat(
+                        label: "VELOCIDADE",
+                        value: String(format: speed >= 10 ? "%.0f× REAL" : "%.1f× REAL", speed),
+                        compact: true
+                    )
+                }
+            }
+        }
+    }
+
+    private func procText(_ seconds: Double) -> String {
+        seconds < 1 ? String(format: "%.2fs", seconds) : String(format: "%.1fs", seconds)
+    }
+
+    private func finderButton(_ folder: URL) -> some View {
+        Button("FINDER") {
+            NSWorkspace.shared.activateFileViewerSelecting([folder])
+        }
+        .buttonStyle(.plain)
+        .font(Theme.mono(8, .medium)).tracking(1)
+        .foregroundStyle(Theme.inkFaint)
     }
 
     private static func formatBytes(_ bytes: Int64) -> String {
@@ -543,15 +847,70 @@ struct EngineCard: View {
                 options: [(Language.ptBR, "PT-BR"), (Language.enUS, "EN-US")],
                 selection: Binding(
                     get: { settings.language },
-                    set: { settings.language = $0 }
+                    set: { new in
+                        let previous = settings.language
+                        settings.language = new
+                        if previous != new, settings.engine == .apple {
+                            Task { await ModelResidence.shared.unloadAppleIfNeeded(keeping: new) }
+                        }
+                    }
                 )
             )
         }
     }
 
-    private func statusLine(_ text: String) -> some View {
+    /// Disk vs RAM status + CARREGAR / DESCARREGAR for the selected engine model.
+    private func residenceFooter(
+        diskLabel: String,
+        canLoad: Bool,
+        showDelete: Bool = false
+    ) -> some View {
+        let inRAM = residence.isSelectedInRAM(settings: settings)
+        let busy = residence.isBusy || controller.state.isActive
+        let loading = residence.phase == .loading
+
+        return HStack(spacing: 8) {
+            if loading {
+                statusLine("CARREGANDO…", color: Theme.accent)
+            } else if inRAM {
+                statusLine("EM RAM", color: Theme.ok)
+            } else if canLoad {
+                statusLine("\(diskLabel) · NO DISCO", color: Theme.inkDim)
+            } else {
+                statusLine(diskLabel, color: Theme.inkDim)
+            }
+
+            Spacer(minLength: 4)
+
+            if loading {
+                EmptyView()
+            } else if inRAM {
+                Button("DESCARREGAR") {
+                    Task { await ModelResidence.shared.unloadSelected() }
+                }
+                .buttonStyle(.plain)
+                .font(Theme.mono(8, .medium)).tracking(1)
+                .foregroundStyle(Theme.inkFaint)
+                .disabled(busy)
+            } else if canLoad {
+                Button("CARREGAR") {
+                    Task { await ModelResidence.shared.loadSelected() }
+                }
+                .buttonStyle(.plain)
+                .font(Theme.mono(8, .medium)).tracking(1)
+                .foregroundStyle(Theme.accent)
+                .disabled(busy)
+            }
+
+            if showDelete {
+                parakeetDeleteButton
+            }
+        }
+    }
+
+    private func statusLine(_ text: String, color: Color = Theme.ok) -> some View {
         HStack(spacing: 6) {
-            Circle().fill(Theme.ok).frame(width: 6, height: 6)
+            Circle().fill(color).frame(width: 6, height: 6)
             Text(text)
                 .font(Theme.mono(8)).tracking(1).foregroundStyle(Theme.inkDim)
         }
@@ -563,36 +922,43 @@ struct EngineCard: View {
 struct StatsCard: View {
     var size: TileSize = .small
     private var history: HistoryStore { .shared }
+    private var compact: Bool { !size.isRoomy }
 
     var body: some View {
         Card {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: compact ? 6 : 8) {
                 CardHeader(number: "03", title: "STATS")
-                HStack(spacing: 16) {
+                HStack(alignment: .top, spacing: compact ? 10 : 16) {
                     DottedRing(
                         value: "\(history.entries.count)",
                         caption: "DITADOS"
                     )
                     .frame(
-                        width: size == .small ? 96 : 120,
-                        height: size == .small ? 96 : 120
+                        width: compact ? 86 : 120,
+                        height: compact ? 86 : 120
                     )
 
-                    VStack(alignment: .leading, spacing: size == .small ? 10 : 14) {
-                        Stat(label: "PALAVRAS", value: "\(history.totalWords)")
-                        Stat(label: "ÁUDIO", value: minutes(history.totalSeconds))
+                    LazyVGrid(
+                        columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
+                        alignment: .leading,
+                        spacing: compact ? 6 : 10
+                    ) {
+                        Stat(label: "PALAVRAS", value: "\(history.totalWords)", compact: compact)
+                        Stat(label: "ÁUDIO", value: minutes(history.totalSeconds), compact: compact)
                         Stat(
                             label: "HOJE",
                             value: "\(todayCount)",
-                            color: todayCount > 0 ? Theme.accent : Theme.ink
+                            color: todayCount > 0 ? Theme.accent : Theme.ink,
+                            compact: compact
                         )
-                        if size.isRoomy {
-                            Stat(label: "MÉDIA/DITADO", value: "\(averageWords)W")
-                            Stat(label: "PROC MÉDIO", value: averageProcess)
-                        }
+                        Stat(label: "SEMANA", value: "\(weekCount)", compact: compact)
+                        Stat(label: "MÉDIA", value: averageWordsDisplay, compact: compact)
+                        Stat(label: "PROC", value: averageProcess, compact: compact)
+                        Stat(label: "CORREÇÕES", value: "\(totalCorrections)", compact: compact)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxHeight: .infinity)
+                .frame(maxHeight: .infinity, alignment: .top)
             }
         }
     }
@@ -601,14 +967,27 @@ struct StatsCard: View {
         history.entries.filter { Calendar.current.isDateInToday($0.date) }.count
     }
 
-    private var averageWords: Int {
-        history.entries.isEmpty ? 0 : history.totalWords / history.entries.count
+    private var weekCount: Int {
+        let cal = Calendar.current
+        let now = Date()
+        return history.entries.filter {
+            cal.isDate($0.date, equalTo: now, toGranularity: .weekOfYear)
+        }.count
+    }
+
+    private var averageWordsDisplay: String {
+        guard !history.entries.isEmpty else { return "—" }
+        return "\(history.totalWords / history.entries.count)W"
     }
 
     private var averageProcess: String {
         guard !history.entries.isEmpty else { return "—" }
         let total = history.entries.reduce(0) { $0 + $1.processSeconds }
         return String(format: "%.1fs", total / Double(history.entries.count))
+    }
+
+    private var totalCorrections: Int {
+        history.entries.reduce(0) { $0 + ($1.corrections?.count ?? 0) }
     }
 
     private func minutes(_ seconds: Double) -> String {

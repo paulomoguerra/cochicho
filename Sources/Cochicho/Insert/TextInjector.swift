@@ -30,6 +30,22 @@ enum TextInjector {
         }
     }
 
+    /// Synthesize Return after a short delay so insert (esp. ⌘V) can land first.
+    static func pressReturn() {
+        Task { @MainActor in
+            // After AX insert this is plenty; after ⌘V paste (also ~40ms) it lands just behind.
+            try? await Task.sleep(for: .milliseconds(80))
+            guard let source = CGEventSource(stateID: .privateState) else { return }
+            let returnKey: CGKeyCode = 36 // kVK_Return
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: returnKey, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: source, virtualKey: returnKey, keyDown: false)
+            else { return }
+            down.post(tap: .cghidEventTap)
+            up.post(tap: .cghidEventTap)
+            Log.inject.info("posted Return")
+        }
+    }
+
     private enum AXOutcome {
         case inserted
         case unverified(String)
@@ -129,9 +145,11 @@ enum TextInjector {
             Log.inject.info("pasted (\(text.count) chars)")
 
             // The paste is asynchronous in the target app; restore only once it's had time
-            // to read the pasteboard.
+            // to read the pasteboard. Skip restore when the user wants the text left there.
             try? await Task.sleep(for: .milliseconds(500))
-            restore(saved, to: pasteboard)
+            if !AppSettings.shared.copyToClipboard {
+                restore(saved, to: pasteboard)
+            }
         }
     }
 

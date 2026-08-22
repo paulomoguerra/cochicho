@@ -151,26 +151,9 @@ actor AppleSpeechEngine: TranscriptionEngine {
         return finalizedText.trimmingCharacters(in: .whitespaces)
     }
 
-    /// Warms the OS speech stack for a locale so the first real dictation skips the cold
-    /// model load. Only touches models that are already installed — never downloads.
+    /// Warms (and keeps) the OS speech stack via the process-wide cache.
     static func preheat(locale: Locale) async {
-        guard SpeechTranscriber.isAvailable else { return }
-        let resolved = await SpeechTranscriber.supportedLocale(equivalentTo: locale)
-            ?? Locale(identifier: "en-US")
-        let transcriber = makeTranscriber(locale: resolved)
-
-        let installed = await SpeechTranscriber.installedLocales
-        let ready = transcriber.selectedLocales.allSatisfy { locale in
-            installed.contains { $0.identifier(.bcp47) == locale.identifier(.bcp47) }
-        }
-        guard ready,
-              let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber])
-        else { return }
-
-        let analyzer = SpeechAnalyzer(modules: [transcriber])
-        try? await analyzer.prepareToAnalyze(in: format)
-        await analyzer.cancelAndFinishNow()
-        Log.speech.info("preheated speech model for \(resolved.identifier)")
+        try? await AppleSpeechWarmup.shared.load(locale: locale)
     }
 
     // MARK: - Setup helpers
@@ -188,7 +171,7 @@ actor AppleSpeechEngine: TranscriptionEngine {
         return context
     }
 
-    private static func makeTranscriber(locale: Locale) -> SpeechTranscriber {
+    fileprivate static func makeTranscriber(locale: Locale) -> SpeechTranscriber {
         SpeechTranscriber(
             locale: locale,
             transcriptionOptions: [],
@@ -199,7 +182,7 @@ actor AppleSpeechEngine: TranscriptionEngine {
         )
     }
 
-    private static func ensureModelInstalled(for transcriber: SpeechTranscriber) async throws {
+    fileprivate static func ensureModelInstalled(for transcriber: SpeechTranscriber) async throws {
         let installed = await SpeechTranscriber.installedLocales
         let selected = transcriber.selectedLocales
         let alreadyThere = selected.allSatisfy { locale in
@@ -216,5 +199,86 @@ actor AppleSpeechEngine: TranscriptionEngine {
         } catch {
             throw TranscriptionError.modelInstallFailed(error.localizedDescription)
         }
+    }
+}
+
+// MARK: - Process-wide warm hold
+
+/// Keeps a prepared `SpeechAnalyzer` alive so OS speech assets stay warm between
+/// utterances. Dictation still builds its own session in `AppleSpeechEngine.start()` —
+/// reusing a live analyzer for streaming proved fragile; the hold is enough.
+actor AppleSpeechWarmup {
+    static let shared = AppleSpeechWarmup()
+
+    private typealias Held = (localeID: String, analyzer: SpeechAnalyzer, transcriber: SpeechTranscriber)
+
+    private var held: Held?
+    private var loadTask: (localeID: String, task: Task<Held, Error>)?
+
+    var loadedLocaleID: String? { held?.localeID }
+    var isLoading: Bool { loadTask != nil }
+
+    func isLoaded(locale: Locale) -> Bool {
+        guard let held else { return false }
+        return Self.bcp47(held.localeID) == Self.bcp47(locale.identifier)
+    }
+
+    /// Ensure assets installed + `prepareToAnalyze`, then keep the analyzer alive.
+    func load(locale: Locale) async throws {
+        guard SpeechTranscriber.isAvailable else {
+            throw TranscriptionError.localeUnsupported(locale)
+        }
+
+        let resolved = await SpeechTranscriber.supportedLocale(equivalentTo: locale)
+            ?? Locale(identifier: "en-US")
+        let localeID = resolved.identifier
+        if let held, Self.bcp47(held.localeID) == Self.bcp47(localeID) { return }
+        if let loadTask, Self.bcp47(loadTask.localeID) == Self.bcp47(localeID) {
+            held = try await loadTask.task.value
+            return
+        }
+
+        await unloadHeld()
+        loadTask?.task.cancel()
+        loadTask = nil
+
+        let task = Task<Held, Error> {
+            let transcriber = AppleSpeechEngine.makeTranscriber(locale: resolved)
+            try await AppleSpeechEngine.ensureModelInstalled(for: transcriber)
+            guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
+                throw TranscriptionError.modelInstallFailed("formato de áudio indisponível")
+            }
+            let analyzer = SpeechAnalyzer(modules: [transcriber])
+            try await analyzer.prepareToAnalyze(in: format)
+            return (localeID, analyzer, transcriber)
+        }
+        loadTask = (localeID, task)
+
+        do {
+            held = try await task.value
+            loadTask = nil
+            Log.speech.info("Apple speech: warm hold ready for \(localeID, privacy: .public)")
+        } catch {
+            loadTask = nil
+            throw error
+        }
+    }
+
+    func unload() async {
+        loadTask?.task.cancel()
+        loadTask = nil
+        await unloadHeld()
+        Log.speech.info("Apple speech: unloaded warm cache")
+    }
+
+    private func unloadHeld() async {
+        if let held {
+            await held.analyzer.cancelAndFinishNow()
+        }
+        held = nil
+    }
+
+    private static func bcp47(_ id: String) -> String {
+        Locale(identifier: id).identifier(.bcp47)
     }
 }
