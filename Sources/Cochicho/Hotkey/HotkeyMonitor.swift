@@ -7,7 +7,12 @@ import Foundation
 /// discrimination don't surface through the higher-level APIs, and because consuming the
 /// event (so an F-key hotkey doesn't also type into the target app) is tap-only.
 /// Needs Accessibility permission; without it `CGEvent.tapCreate` returns nil.
-@MainActor
+///
+/// Deliberately NOT `@MainActor`: the tap callback is a raw C callback, and bridging it
+/// with `MainActor.assumeIsolated` crashed in the wild (runtime executor check read a
+/// dangling pointer — see the 2026-08-22 crash report). All state here is only touched
+/// from the main run loop (tap callback + start/stop), so plain storage is safe; only the
+/// press/release/toggle callbacks hop to the main actor, asynchronously.
 final class HotkeyMonitor {
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -15,10 +20,10 @@ final class HotkeyMonitor {
 
     var spec: HotkeySpec = .rightOption
     var mode: HotkeyMode = .hold
-    var onPress: (() -> Void)?
-    var onRelease: (() -> Void)?
+    var onPress: (@MainActor () -> Void)?
+    var onRelease: (@MainActor () -> Void)?
     /// Toggle mode fires this instead of press/release pairs.
-    var onToggle: (() -> Void)?
+    var onToggle: (@MainActor () -> Void)?
 
     /// - Returns: `false` if the tap couldn't be created — almost always missing Accessibility.
     @discardableResult
@@ -38,15 +43,11 @@ final class HotkeyMonitor {
             callback: { _, type, event, refcon in
                 guard let refcon else { return Unmanaged.passUnretained(event) }
                 let monitor = Unmanaged<HotkeyMonitor>.fromOpaque(refcon).takeUnretainedValue()
-
-                // CGEvent isn't Sendable — pull plain values out before crossing into
-                // actor-isolated code. The tap runs on the main run loop.
                 let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
                 let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
-                let flags = event.flags
-                let consume = MainActor.assumeIsolated {
-                    monitor.handle(type: type, keyCode: keyCode, isRepeat: isRepeat, flags: flags)
-                }
+                let consume = monitor.handle(
+                    type: type, keyCode: keyCode, isRepeat: isRepeat, flags: event.flags
+                )
                 return consume ? nil : Unmanaged.passUnretained(event)
             },
             userInfo: refcon
@@ -105,11 +106,14 @@ final class HotkeyMonitor {
     }
 
     private func fire(pressed: Bool) {
+        let callback: (@MainActor () -> Void)?
         switch mode {
         case .hold:
-            pressed ? onPress?() : onRelease?()
+            callback = pressed ? onPress : onRelease
         case .toggle:
-            if pressed { onToggle?() }
+            callback = pressed ? onToggle : nil
         }
+        guard let callback else { return }
+        Task { @MainActor in callback() }
     }
 }
