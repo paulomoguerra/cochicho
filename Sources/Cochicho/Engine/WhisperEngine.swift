@@ -163,11 +163,12 @@ actor WhisperModels {
 
     static func isEnglishOnly(_ model: String) -> Bool { model.hasSuffix(".en") }
 
-    /// Short display name for the catalog: "openai_whisper-large-v3_947MB" → "LARGE-V3 947MB".
+    /// Short display name for the catalog: "openai_whisper-large-v3_947MB" → "LARGE-V3 947MB",
+    /// "distil-whisper_distil-large-v3" → "DISTIL-LARGE-V3".
     static func displayName(_ model: String) -> String {
         model
             .replacingOccurrences(of: "openai_whisper-", with: "")
-            .replacingOccurrences(of: "distil-whisper_", with: "distil-")
+            .replacingOccurrences(of: "distil-whisper_", with: "")
             .replacingOccurrences(of: "_", with: " ")
             .uppercased()
     }
@@ -193,11 +194,15 @@ actor WhisperModels {
     static func availableModels() async -> [String] {
         var names = (try? await WhisperKit.fetchAvailableModels(from: repo)) ?? []
         if names.isEmpty { names = curated }
+        // The hub writes bookkeeping folders (".cache") next to the models — only merge
+        // real model folders, verified by their contents.
         let onDisk = (try? FileManager.default.contentsOfDirectory(
             atPath: downloadBase.appendingPathComponent("models/\(repo)").path
         )) ?? []
-        for model in onDisk where !names.contains(model) { names.append(model) }
-        return names.sorted()
+        for model in onDisk where !model.hasPrefix(".") && !names.contains(model) && isDownloaded(model) {
+            names.append(model)
+        }
+        return names.sorted { displayName($0) < displayName($1) }
     }
 
     func download(

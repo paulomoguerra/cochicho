@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct DashboardView: View {
     let controller: DictationController
@@ -6,6 +7,11 @@ struct DashboardView: View {
 
     /// Layout-edit mode: tiles show their size picker and become draggable.
     @State private var editingLayout = false
+    /// The tile currently mid-drag; nil when no drag is in flight.
+    @State private var draggedTile: Tile?
+    /// Whether the current drag already live-reordered by hovering a tile — a background
+    /// drop then keeps that position instead of jumping to the end.
+    @State private var dragDidReorder = false
 
     var body: some View {
         ScrollView {
@@ -17,12 +23,21 @@ struct DashboardView: View {
                             .tileSpan(config.size)
                     }
                 }
+                // The grid itself is a drop target, so a tile can be dropped into empty
+                // space (it packs into the earliest hole it fits), not only onto a tile.
+                .onDrop(of: [.text], delegate: GridDropDelegate(
+                    dragged: $draggedTile, didReorder: $dragDidReorder, settings: settings
+                ))
             }
             .padding(20)
         }
         .frame(minWidth: 980, minHeight: 700)
         .background(Theme.bg)
         .preferredColorScheme(.dark)
+        .onChange(of: editingLayout) {
+            draggedTile = nil
+            dragDidReorder = false
+        }
     }
 
     @ViewBuilder
@@ -40,20 +55,30 @@ struct DashboardView: View {
 
         if editingLayout {
             card
+                // Whole-card drag surface: swallows the content's own controls and inner
+                // scroll views so the drag never fights them while arranging.
+                .overlay(
+                    Color.clear
+                        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(Theme.accent.opacity(0.55), lineWidth: 1)
+                        .stroke(Theme.accent.opacity(draggedTile == config.tile ? 1 : 0.55), lineWidth: 1)
                 )
                 .overlay(alignment: .bottomTrailing) {
                     sizePicker(for: config)
                         .padding(8)
                 }
-                .draggable(config.tile.rawValue)
-                .dropDestination(for: String.self) { items, _ in
-                    guard let raw = items.first, let dragged = Tile(rawValue: raw) else { return false }
-                    move(dragged, onto: config.tile)
-                    return true
+                .opacity(draggedTile == config.tile ? 0.35 : 1)
+                .onDrag {
+                    draggedTile = config.tile
+                    dragDidReorder = false
+                    return NSItemProvider(object: config.tile.rawValue as NSString)
                 }
+                .onDrop(of: [.text], delegate: TileReorderDelegate(
+                    target: config.tile, dragged: $draggedTile,
+                    didReorder: $dragDidReorder, settings: settings
+                ))
         } else {
             card
         }
@@ -65,7 +90,9 @@ struct DashboardView: View {
                 Button(size.label) {
                     guard let index = settings.tileLayout.firstIndex(where: { $0.tile == config.tile })
                     else { return }
-                    settings.tileLayout[index].size = size
+                    withAnimation(.spring(duration: 0.3)) {
+                        settings.tileLayout[index].size = size
+                    }
                 }
                 .buttonStyle(.plain)
                 .font(Theme.mono(9, .semibold))
@@ -76,17 +103,6 @@ struct DashboardView: View {
                 .overlay(Circle().stroke(Theme.cardBorder, lineWidth: 1))
             }
         }
-    }
-
-    /// Drop = take the target tile's slot; everything else shifts around it.
-    private func move(_ dragged: Tile, onto target: Tile) {
-        var layout = settings.tileLayout
-        guard let from = layout.firstIndex(where: { $0.tile == dragged }),
-              let to = layout.firstIndex(where: { $0.tile == target }),
-              from != to else { return }
-        let item = layout.remove(at: from)
-        layout.insert(item, at: to)
-        settings.tileLayout = layout
     }
 
     private var header: some View {
@@ -127,6 +143,60 @@ struct DashboardView: View {
         if case .error = controller.state { return Theme.accent }
         if !controller.hotkeyArmed { return .yellow }
         return controller.state.isActive ? Theme.accent : Theme.ok
+    }
+
+    /// Live reorder: the moment the drag hovers another tile, the dragged tile takes that
+    /// slot — the grid shuffles under the cursor, so what you see is what you get.
+    private struct TileReorderDelegate: DropDelegate {
+        let target: Tile
+        @Binding var dragged: Tile?
+        @Binding var didReorder: Bool
+        let settings: AppSettings
+
+        func dropEntered(info: DropInfo) {
+            guard let dragged, dragged != target,
+                  let from = settings.tileLayout.firstIndex(where: { $0.tile == dragged }),
+                  let to = settings.tileLayout.firstIndex(where: { $0.tile == target })
+            else { return }
+            didReorder = true
+            withAnimation(.spring(duration: 0.3)) {
+                settings.tileLayout.move(
+                    fromOffsets: IndexSet(integer: from),
+                    toOffset: to > from ? to + 1 : to
+                )
+            }
+        }
+
+        func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+
+        func performDrop(info: DropInfo) -> Bool {
+            dragged = nil
+            return true
+        }
+    }
+
+    /// Backstop for drops on empty grid space. If the drag never hovered a tile, the
+    /// dragged tile moves to the end of the order — first-fit packing then slides it into
+    /// the earliest hole it fits, which is the empty region the user aimed at.
+    private struct GridDropDelegate: DropDelegate {
+        @Binding var dragged: Tile?
+        @Binding var didReorder: Bool
+        let settings: AppSettings
+
+        func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+
+        func performDrop(info: DropInfo) -> Bool {
+            defer { dragged = nil }
+            guard let tile = dragged else { return false }
+            if !didReorder,
+               let from = settings.tileLayout.firstIndex(where: { $0.tile == tile }) {
+                withAnimation(.spring(duration: 0.3)) {
+                    let item = settings.tileLayout.remove(at: from)
+                    settings.tileLayout.append(item)
+                }
+            }
+            return true
+        }
     }
 
     private var statusLine: String {
