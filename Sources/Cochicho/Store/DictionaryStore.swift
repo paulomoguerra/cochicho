@@ -29,6 +29,9 @@ final class DictionaryStore {
         return dir.appendingPathComponent("dictionary.json")
     }
 
+    private let persister = DiskPersister(url: DictionaryStore.fileURL)
+    private var saveVersion = 0
+
     private init() {
         if let data = try? Data(contentsOf: Self.fileURL),
            let saved = try? JSONDecoder().decode([DictionaryEntry].self, from: data) {
@@ -78,9 +81,9 @@ final class DictionaryStore {
     }
 
     private func save() {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(entries) else { return }
-        try? data.write(to: Self.fileURL, options: .atomic)
+        saveVersion += 1
+        let version = saveVersion
+        let snapshot = entries
+        Task { await persister.save(snapshot, version: version) }
     }
 }

@@ -84,8 +84,10 @@ final class HUDPanel: NSPanel {
             context.duration = 0.16
             animator().alphaValue = 0
         } completionHandler: { [weak self] in
-            // AppKit always calls this on the main thread.
-            MainActor.assumeIsolated { self?.orderOut(nil) }
+            // Hop via a task instead of `MainActor.assumeIsolated` — the assertion crashes
+            // the process when the runtime's executor bookkeeping is stale (seen in the
+            // wild in the event-tap callback), and a one-runloop-turn delay is invisible.
+            Task { @MainActor in self?.orderOut(nil) }
         }
     }
 }

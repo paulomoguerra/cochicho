@@ -38,6 +38,9 @@ final class HistoryStore {
         return dir.appendingPathComponent("history.json")
     }
 
+    private let persister = DiskPersister(url: HistoryStore.fileURL, iso8601Dates: true)
+    private var saveVersion = 0
+
     private init() {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -70,9 +73,9 @@ final class HistoryStore {
     var totalSeconds: Double { entries.reduce(0) { $0 + $1.audioSeconds } }
 
     private func save() {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        guard let data = try? encoder.encode(entries) else { return }
-        try? data.write(to: Self.fileURL, options: .atomic)
+        saveVersion += 1
+        let version = saveVersion
+        let snapshot = entries
+        Task { await persister.save(snapshot, version: version) }
     }
 }

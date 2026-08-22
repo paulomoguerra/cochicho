@@ -15,6 +15,12 @@ let package = Package(
             ],
             path: "Sources/Cochicho",
             swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .testTarget(
+            name: "CochichoTests",
+            dependencies: ["Cochicho"],
+            path: "Tests/CochichoTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
         )
     ]
 )

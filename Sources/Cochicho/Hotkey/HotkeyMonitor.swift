@@ -24,6 +24,9 @@ final class HotkeyMonitor {
     var onRelease: (@MainActor () -> Void)?
     /// Toggle mode fires this instead of press/release pairs.
     var onToggle: (@MainActor () -> Void)?
+    /// Fired when the system disables the tap and re-enabling fails — in practice, the
+    /// Accessibility grant was revoked while running.
+    var onTapDied: (@MainActor () -> Void)?
 
     /// - Returns: `false` if the tap couldn't be created — almost always missing Accessibility.
     @discardableResult
@@ -82,7 +85,12 @@ final class HotkeyMonitor {
     private func handle(type: CGEventType, keyCode: Int64, isRepeat: Bool, flags: CGEventFlags) -> Bool {
         // The system disables a tap that runs too slowly or is interrupted; re-arm it.
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+            if let tap {
+                CGEvent.tapEnable(tap: tap, enable: true)
+                if !CGEvent.tapIsEnabled(tap: tap), let onTapDied {
+                    Task { @MainActor in onTapDied() }
+                }
+            }
             return false
         }
 

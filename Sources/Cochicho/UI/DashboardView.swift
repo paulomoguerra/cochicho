@@ -94,14 +94,14 @@ struct MicCard: View {
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, minHeight: 40, alignment: .topLeading)
 
-                TimelineView(.animation(minimumInterval: 1.0 / 20)) { _ in
-                    DotWaveform(levels: levels, idle: !controller.state.isActive)
-                        .onChange(of: controller.level) { _, new in
-                            levels.append(new)
-                            if levels.count > 80 { levels.removeFirst(levels.count - 80) }
-                        }
-                }
-                .frame(height: 56)
+                // No TimelineView: the Canvas already redraws when `levels` mutates, and a
+                // timeline forces 20 fps of redraws even while the app sits idle.
+                DotWaveform(levels: levels, idle: !controller.state.isActive)
+                    .onChange(of: controller.level) { _, new in
+                        levels.append(new)
+                        if levels.count > 80 { levels.removeFirst(levels.count - 80) }
+                    }
+                    .frame(height: 56)
 
                 HStack {
                     Button(controller.state.isActive ? "PARAR" : "GRAVAR") {

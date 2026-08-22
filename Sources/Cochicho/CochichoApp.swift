@@ -172,16 +172,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if !controller.activate() {
             Permissions.promptForAccessibility()
-            retryActivation()
+            controller.rearmWhenPermitted()
         }
 
-        // Warm the Parakeet models when they're the chosen engine and already on disk, so
-        // the first dictation isn't a 20-second stall. (Never triggers the 470 MB
-        // download implicitly — that's the explicit button in the dashboard.)
-        if AppSettings.shared.engine == .parakeet && ParakeetModels.isDownloaded {
+        // Warm the chosen engine so the first dictation isn't a cold-start stall.
+        // Parakeet: load the CoreML models when already on disk (never triggers the 470 MB
+        // download implicitly — that's the explicit button in the dashboard).
+        // Apple: prime the OS speech model for the current locale.
+        switch AppSettings.shared.engine {
+        case .parakeet where ParakeetModels.isDownloaded:
             Task.detached(priority: .utility) {
                 _ = try? await ParakeetModels.shared.manager()
             }
+        case .apple:
+            let locale = AppSettings.shared.language.locale
+            Task.detached(priority: .utility) {
+                await AppleSpeechEngine.preheat(locale: locale)
+            }
+        default:
+            break
         }
     }
 
@@ -198,17 +207,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // granted Accessibility in System Settings.
         if !controller.hotkeyArmed {
             controller.reloadHotkey()
-        }
-    }
-
-    /// There is no notification for an Accessibility grant, so poll until it lands.
-    private func retryActivation() {
-        Task { @MainActor in
-            while !Permissions.hasAccessibility {
-                try? await Task.sleep(for: .seconds(1))
-            }
-            controller.activate()
-            Log.app.info("Accessibility granted — hotkey armed")
         }
     }
 

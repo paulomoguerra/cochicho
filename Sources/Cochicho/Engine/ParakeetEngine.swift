@@ -9,7 +9,12 @@ import Foundation
 /// pass on stop — at ~100× realtime a 30-second utterance resolves in a fraction of a
 /// second, imperceptible for push-to-talk, but there's no live text in the HUD.
 actor ParakeetEngine: TranscriptionEngine {
+    /// Hard backstop above the controller's own dictation watchdog: 10 minutes of 16 kHz
+    /// audio ≈ 38 MB. Past that, buffers are dropped instead of growing without bound.
+    private static let maxSamples = 16_000 * 600
+
     private var samples: [Float] = []
+    private var reportedOverflow = false
     private var continuation: AsyncThrowingStream<TranscriptionChunk, Error>.Continuation?
 
     /// Defaults to 16 kHz mono float32 — exactly what Parakeet is trained on.
@@ -21,6 +26,7 @@ actor ParakeetEngine: TranscriptionEngine {
 
     func start() async throws -> AsyncThrowingStream<TranscriptionChunk, Error> {
         samples.removeAll(keepingCapacity: true)
+        reportedOverflow = false
 
         let (stream, continuation) = AsyncThrowingStream<TranscriptionChunk, Error>.makeStream()
         self.continuation = continuation
@@ -35,6 +41,14 @@ actor ParakeetEngine: TranscriptionEngine {
     func feed(_ chunk: AudioChunk) async {
         let buffer = chunk.buffer
         guard buffer.frameLength > 0 else { return }
+
+        guard samples.count < Self.maxSamples else {
+            if !reportedOverflow {
+                reportedOverflow = true
+                Log.speech.error("Parakeet: dictation exceeded 10 min — dropping further audio")
+            }
+            return
+        }
 
         // FluidAudio's `AsrManager.transcribe(_ samples:)` performs **no resampling and no
         // rate validation** — wrong sample rate silently transcribes garbage. Its own

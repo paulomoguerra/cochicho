@@ -88,7 +88,20 @@ actor AppleSpeechEngine: TranscriptionEngine {
             }
         }
 
-        try await analyzer.start(inputSequence: inputStream)
+        do {
+            try await analyzer.start(inputSequence: inputStream)
+        } catch {
+            // Without this, `resultsTask` sits on `transcriber.results` forever and leaks
+            // both the task and the transcriber it captured.
+            resultsTask?.cancel()
+            resultsTask = nil
+            chunkContinuation.finish(throwing: error)
+            inputContinuation.finish()
+            self.inputContinuation = nil
+            self.analyzer = nil
+            self.transcriber = nil
+            throw error
+        }
         Log.speech.info("SpeechAnalyzer started for \(resolvedLocale.identifier) (volatile+fast)")
 
         return chunks
@@ -136,6 +149,28 @@ actor AppleSpeechEngine: TranscriptionEngine {
         }
         finalizedText += text
         return finalizedText.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Warms the OS speech stack for a locale so the first real dictation skips the cold
+    /// model load. Only touches models that are already installed — never downloads.
+    static func preheat(locale: Locale) async {
+        guard SpeechTranscriber.isAvailable else { return }
+        let resolved = await SpeechTranscriber.supportedLocale(equivalentTo: locale)
+            ?? Locale(identifier: "en-US")
+        let transcriber = makeTranscriber(locale: resolved)
+
+        let installed = await SpeechTranscriber.installedLocales
+        let ready = transcriber.selectedLocales.allSatisfy { locale in
+            installed.contains { $0.identifier(.bcp47) == locale.identifier(.bcp47) }
+        }
+        guard ready,
+              let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber])
+        else { return }
+
+        let analyzer = SpeechAnalyzer(modules: [transcriber])
+        try? await analyzer.prepareToAnalyze(in: format)
+        await analyzer.cancelAndFinishNow()
+        Log.speech.info("preheated speech model for \(resolved.identifier)")
     }
 
     // MARK: - Setup helpers

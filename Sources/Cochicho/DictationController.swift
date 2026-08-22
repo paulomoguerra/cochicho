@@ -5,13 +5,11 @@ import Observation
 
 /// Builds the engine named by the current settings. Read per-utterance so an engine or
 /// language change in the UI takes effect on the very next dictation, no restart.
-@Sendable
+@MainActor
 func engineForCurrentSetting() -> any TranscriptionEngine {
-    MainActor.assumeIsolated {
-        switch AppSettings.shared.engine {
-        case .apple: AppleSpeechEngine(locale: AppSettings.shared.language.locale)
-        case .parakeet: ParakeetEngine()
-        }
+    switch AppSettings.shared.engine {
+    case .apple: AppleSpeechEngine(locale: AppSettings.shared.language.locale)
+    case .parakeet: ParakeetEngine()
     }
 }
 
@@ -41,13 +39,19 @@ final class DictationController {
     /// Whether the hotkey tap is armed (false ⇒ missing Accessibility).
     private(set) var hotkeyArmed = false
 
+    /// Safety net for a forgotten toggle-mode dictation (or a lost key-up in hold mode):
+    /// the mic never stays open longer than this.
+    static let maxDictationSeconds: Double = 300
+
     private let hotkey = HotkeyMonitor()
     private let capture = AudioCapture()
-    private let makeEngine: @Sendable () -> any TranscriptionEngine
+    private let makeEngine: @MainActor () -> any TranscriptionEngine
 
     private var engine: (any TranscriptionEngine)?
     private var consumeTask: Task<Void, Never>?
     private var feedTask: Task<Void, Never>?
+    private var watchdogTask: Task<Void, Never>?
+    private var rearmTask: Task<Void, Never>?
     private var audioContinuation: AsyncStream<AudioChunk>.Continuation?
 
     private var holdStarted: Date?
@@ -55,7 +59,7 @@ final class DictationController {
     private var engineName = ""
     private var languageName = ""
 
-    init(makeEngine: @escaping @Sendable () -> any TranscriptionEngine = engineForCurrentSetting) {
+    init(makeEngine: @escaping @MainActor () -> any TranscriptionEngine = engineForCurrentSetting) {
         self.makeEngine = makeEngine
     }
 
@@ -76,6 +80,7 @@ final class DictationController {
                 self.beginDictation()
             }
         }
+        hotkey.onTapDied = { [weak self] in self?.hotkeyLost() }
         hotkeyArmed = hotkey.start()
         return hotkeyArmed
     }
@@ -83,7 +88,35 @@ final class DictationController {
     func deactivate() {
         hotkey.stop()
         hotkeyArmed = false
+        rearmTask?.cancel()
+        rearmTask = nil
         cancelDictation()
+    }
+
+    /// The system refused to re-enable the tap — almost always a revoked Accessibility
+    /// grant. Reflect reality in the UI and wait for the grant to come back.
+    private func hotkeyLost() {
+        guard hotkeyArmed else { return }
+        Log.hotkey.error("tap died — waiting for Accessibility to return")
+        hotkey.stop()
+        hotkeyArmed = false
+        cancelDictation()
+        rearmWhenPermitted()
+    }
+
+    /// Polls until Accessibility is granted, then arms the hotkey. There is no
+    /// notification for the grant, so polling is the only option.
+    func rearmWhenPermitted() {
+        guard rearmTask == nil else { return }
+        rearmTask = Task { @MainActor in
+            defer { rearmTask = nil }
+            while !Permissions.hasAccessibility {
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+            }
+            activate()
+            Log.app.info("Accessibility granted — hotkey armed")
+        }
     }
 
     /// Re-arms the tap after the user picks a different key or mode.
@@ -112,7 +145,7 @@ final class DictationController {
         engineName = AppSettings.shared.engine.displayName
         languageName = AppSettings.shared.language.rawValue
 
-        Task { @MainActor in
+        Task { @MainActor [self] in
             do {
                 guard await Permissions.requestMicrophone() else {
                     fail("Microfone bloqueado. Ative em Ajustes ▸ Privacidade ▸ Microfone.")
@@ -160,6 +193,13 @@ final class DictationController {
                 self.state = .listening
                 if AppSettings.shared.soundEnabled { NSSound(named: "Tink")?.play() }
 
+                self.watchdogTask = Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(Self.maxDictationSeconds))
+                    guard !Task.isCancelled, self.state == .listening else { return }
+                    Log.app.warning("dictation auto-stopped after \(Int(Self.maxDictationSeconds))s")
+                    self.endDictation()
+                }
+
                 self.consumeTask = Task { @MainActor in
                     do {
                         for try await chunk in chunks {
@@ -181,6 +221,8 @@ final class DictationController {
         // The window is wide: Parakeet transcribes inside `finish()`.
         guard state.isActive, state != .finishing else { return }
         state = .finishing
+        watchdogTask?.cancel()
+        watchdogTask = nil
         capture.stop()
         level = 0
         releasedAt = Date()
@@ -197,6 +239,14 @@ final class DictationController {
             await consumeTask?.value
             consumeTask = nil
             engine = nil
+
+            // If the engine failed while draining, `fail()` has already taken over the
+            // state — injecting a partial transcript on top would flash the error away
+            // and paste half an utterance.
+            guard state == .finishing else {
+                transcript = ""
+                return
+            }
 
             let raw = transcript
             guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -227,6 +277,8 @@ final class DictationController {
     }
 
     private func cancelDictation() {
+        watchdogTask?.cancel()
+        watchdogTask = nil
         capture.stop()
         audioContinuation?.finish()
         audioContinuation = nil
@@ -284,6 +336,8 @@ final class DictationController {
 
     private func fail(_ message: String) {
         Log.app.error("\(message)")
+        watchdogTask?.cancel()
+        watchdogTask = nil
         capture.stop()
         audioContinuation?.finish()
         audioContinuation = nil

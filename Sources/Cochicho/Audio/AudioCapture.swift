@@ -1,3 +1,4 @@
+import Accelerate
 import AVFoundation
 import Foundation
 
@@ -139,17 +140,14 @@ final class AudioCapture: @unchecked Sendable {
         }
     }
 
+    /// Runs on the real-time audio thread — vDSP keeps it a single vectorized pass.
     private static func rms(of buffer: AVAudioPCMBuffer) -> Float {
         guard let channel = buffer.floatChannelData?[0] else { return 0 }
-        let count = Int(buffer.frameLength)
+        let count = vDSP_Length(buffer.frameLength)
         guard count > 0 else { return 0 }
 
-        var sum: Float = 0
-        for i in 0..<count {
-            let sample = channel[i]
-            sum += sample * sample
-        }
-        let rms = (sum / Float(count)).squareRoot()
+        var rms: Float = 0
+        vDSP_rmsqv(channel, 1, &rms, count)
 
         // Map roughly -50…0 dBFS onto 0…1 so quiet speech still moves the meter.
         let db = 20 * log10(max(rms, 1e-7))
