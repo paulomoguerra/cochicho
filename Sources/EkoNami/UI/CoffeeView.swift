@@ -33,20 +33,26 @@ struct CoffeeView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
 
-            Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(Donation.lnurl, forType: .string)
-                copied = true
-                Task {
-                    try? await Task.sleep(for: .seconds(1.2))
-                    copied = false
+            VStack(spacing: 6) {
+                Text("BITCOIN LIGHTNING")
+                    .font(Theme.mono(9, .medium)).tracking(2)
+                    .foregroundStyle(Theme.inkDim)
+
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(Donation.lnurl, forType: .string)
+                    copied = true
+                    Task {
+                        try? await Task.sleep(for: .seconds(1.2))
+                        copied = false
+                    }
+                } label: {
+                    Text(copied ? "COPIADO ✓" : Donation.abbreviated)
+                        .font(Theme.mono(9)).tracking(1)
+                        .foregroundStyle(copied ? Theme.ok : Theme.inkFaint)
                 }
-            } label: {
-                Text(copied ? "COPIADO ✓" : Donation.abbreviated)
-                    .font(Theme.mono(9)).tracking(1)
-                    .foregroundStyle(copied ? Theme.ok : Theme.inkFaint)
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .padding(20)
         .frame(width: 280)
