@@ -175,22 +175,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller.rearmWhenPermitted()
         }
 
-        // Warm the chosen engine so the first dictation isn't a cold-start stall.
-        // Parakeet: load the CoreML models when already on disk (never triggers the 470 MB
-        // download implicitly — that's the explicit button in the dashboard).
-        // Apple: prime the OS speech model for the current locale.
+        // Warm the chosen engine so the first dictation isn't a cold-start stall. Model
+        // downloads are never triggered implicitly — those are explicit catalog buttons.
         switch AppSettings.shared.engine {
-        case .parakeet where ParakeetModels.isDownloaded:
-            Task.detached(priority: .utility) {
-                _ = try? await ParakeetModels.shared.manager()
+        case .parakeet:
+            let version = AppSettings.shared.parakeetVersion
+            if ParakeetModels.isDownloaded(version) {
+                Task.detached(priority: .utility) {
+                    _ = try? await ParakeetModels.shared.manager(version: version)
+                }
+            }
+        case .whisper:
+            let model = AppSettings.shared.whisperModel
+            if WhisperModels.isDownloaded(model) {
+                Task.detached(priority: .utility) {
+                    _ = try? await WhisperModels.shared.pipe(for: model)
+                }
             }
         case .apple:
             let locale = AppSettings.shared.language.locale
             Task.detached(priority: .utility) {
                 await AppleSpeechEngine.preheat(locale: locale)
             }
-        default:
-            break
         }
     }
 

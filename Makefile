@@ -13,10 +13,17 @@ BUNDLE   := $(STAGE)/$(APPNAME)
 CONTENTS := $(BUNDLE)/Contents
 
 ## TCC keys the Accessibility grant to the code signature; an ad-hoc signature changes on
-## every build and silently invalidates the grant. Prefer a stable Developer ID when the
-## machine has one, fall back to ad-hoc.
+## every build and silently invalidates the grant. Any stable identity fixes that:
+## prefer Developer ID (distribution), then Apple Development (free, local-only),
+## fall back to ad-hoc only when the machine has neither.
+## Sign by SHA-1 hash, not name — duplicate certificates with identical names make
+## codesign refuse with "ambiguous".
 SIGN_ID := $(shell security find-identity -v -p codesigning 2>/dev/null \
-             | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)".*/\1/')
+             | grep "Developer ID Application" | head -1 | awk '{print $$2}')
+ifeq ($(strip $(SIGN_ID)),)
+SIGN_ID := $(shell security find-identity -v -p codesigning 2>/dev/null \
+             | grep "Apple Development" | head -1 | awk '{print $$2}')
+endif
 ifeq ($(strip $(SIGN_ID)),)
 SIGN_ID := -
 endif

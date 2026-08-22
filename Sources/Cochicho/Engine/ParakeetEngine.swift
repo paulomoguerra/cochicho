@@ -13,12 +13,17 @@ actor ParakeetEngine: TranscriptionEngine {
     /// audio ≈ 38 MB. Past that, buffers are dropped instead of growing without bound.
     private static let maxSamples = 16_000 * 600
 
+    private let version: ParakeetVersion
     private var samples: [Float] = []
     private var reportedOverflow = false
     private var continuation: AsyncThrowingStream<TranscriptionChunk, Error>.Continuation?
 
     /// Defaults to 16 kHz mono float32 — exactly what Parakeet is trained on.
     private let converter = AudioConverter()
+
+    init(version: ParakeetVersion = .v3) {
+        self.version = version
+    }
 
     func preferredInputFormat() async -> AVAudioFormat? {
         AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)
@@ -33,7 +38,7 @@ actor ParakeetEngine: TranscriptionEngine {
 
         // Force the (possibly very slow) first load to happen here rather than on release,
         // so the user waits before speaking instead of losing an utterance to a timeout.
-        _ = try await ParakeetModels.shared.manager()
+        _ = try await ParakeetModels.shared.manager(version: version)
 
         return stream
     }
@@ -74,7 +79,7 @@ actor ParakeetEngine: TranscriptionEngine {
         }
 
         do {
-            let manager = try await ParakeetModels.shared.manager()
+            let manager = try await ParakeetModels.shared.manager(version: version)
             var decoderState = try TdtDecoderState()
             let started = Date()
             let result = try await manager.transcribe(samples, decoderState: &decoderState)
@@ -106,48 +111,64 @@ actor ParakeetEngine: TranscriptionEngine {
 actor ParakeetModels {
     static let shared = ParakeetModels()
 
-    /// Whether the models are already on disk, checked without loading them.
+    /// Whether a version's models are already on disk, checked without loading them.
     /// `nonisolated` and filesystem-based on purpose: the UI needs this synchronously.
-    nonisolated static var isDownloaded: Bool {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let encoder = support
-            .appendingPathComponent("FluidAudio/Models/parakeet-tdt-0.6b-v3/Encoder.mlmodelc")
-        return FileManager.default.fileExists(atPath: encoder.path)
+    nonisolated static func isDownloaded(_ version: ParakeetVersion) -> Bool {
+        let asrVersion = version.asrVersion
+        return AsrModels.modelsExist(
+            at: AsrModels.defaultCacheDirectory(for: asrVersion), version: asrVersion
+        )
     }
 
-    private var loaded: AsrManager?
-    private var loadTask: Task<AsrManager, Error>?
+    nonisolated static var isDownloaded: Bool { isDownloaded(.v3) }
 
-    var isLoaded: Bool { loaded != nil }
+    /// One loaded manager at a time — a 0.6B model is not worth keeping twice in RAM
+    /// just because the user flipped versions.
+    private var loaded: (version: ParakeetVersion, manager: AsrManager)?
+    private var loadTask: (version: ParakeetVersion, task: Task<AsrManager, Error>)?
 
-    /// Loads once; concurrent callers await the same task rather than racing to download.
-    func manager() async throws -> AsrManager {
-        if let loaded { return loaded }
-        if let loadTask { return try await loadTask.value }
+    /// Loads once per version; concurrent callers await the same task rather than racing
+    /// to download.
+    func manager(version: ParakeetVersion = .v3) async throws -> AsrManager {
+        if let loaded, loaded.version == version { return loaded.manager }
+        if let loadTask, loadTask.version == version { return try await loadTask.task.value }
 
+        loadTask = nil
         let task = Task<AsrManager, Error> {
-            let stage = Self.isDownloaded
+            let stage = Self.isDownloaded(version)
                 ? "loading models from disk"
                 : "downloading models (~470 MB, one time)"
-            Log.speech.info("Parakeet: \(stage, privacy: .public)")
+            Log.speech.info("Parakeet \(version.rawValue, privacy: .public): \(stage, privacy: .public)")
             let started = Date()
-            let models = try await AsrModels.downloadAndLoad(version: .v3, encoderPrecision: .int8)
+            let models = try await AsrModels.downloadAndLoad(
+                version: version.asrVersion, encoderPrecision: .int8
+            )
             let manager = AsrManager(config: .default)
             try await manager.loadModels(models)
             Log.speech.info("Parakeet: ready in \(Date().timeIntervalSince(started), format: .fixed(precision: 1))s")
             return manager
         }
-        loadTask = task
+        loadTask = (version, task)
 
         do {
             let manager = try await task.value
-            loaded = manager
+            loaded = (version, manager)
+            loadTask = nil
             return manager
         } catch {
             // Don't cache a failed load — a transient download error shouldn't wedge the
             // engine for the rest of the session.
             loadTask = nil
             throw error
+        }
+    }
+}
+
+extension ParakeetVersion {
+    var asrVersion: AsrModelVersion {
+        switch self {
+        case .v2: .v2
+        case .v3: .v3
         }
     }
 }

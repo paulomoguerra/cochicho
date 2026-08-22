@@ -4,11 +4,26 @@ import Observation
 enum Engine: String, CaseIterable, Codable {
     case apple
     case parakeet
+    case whisper
 
     var displayName: String {
         switch self {
         case .apple: "APPLE LOCAL"
-        case .parakeet: "PARAKEET V3"
+        case .parakeet: "PARAKEET"
+        case .whisper: "WHISPER"
+        }
+    }
+}
+
+/// Which Parakeet checkpoint FluidAudio should run.
+enum ParakeetVersion: String, CaseIterable, Codable {
+    case v3
+    case v2
+
+    var displayName: String {
+        switch self {
+        case .v3: "V3 MULTI"
+        case .v2: "V2 EN"
         }
     }
 }
@@ -18,6 +33,14 @@ enum Language: String, CaseIterable, Codable {
     case enUS = "en-US"
 
     var locale: Locale { Locale(identifier: rawValue) }
+
+    /// Whisper wants bare ISO 639-1 codes, not BCP-47.
+    var whisperCode: String {
+        switch self {
+        case .ptBR: "pt"
+        case .enUS: "en"
+        }
+    }
 
     var displayName: String {
         switch self {
@@ -73,6 +96,13 @@ final class AppSettings {
     var engine: Engine {
         didSet { defaults.set(engine.rawValue, forKey: "engine") }
     }
+    var parakeetVersion: ParakeetVersion {
+        didSet { defaults.set(parakeetVersion.rawValue, forKey: "parakeetVersion") }
+    }
+    /// WhisperKit variant name, e.g. "openai_whisper-base".
+    var whisperModel: String {
+        didSet { defaults.set(whisperModel, forKey: "whisperModel") }
+    }
     var language: Language {
         didSet { defaults.set(language.rawValue, forKey: "language") }
     }
@@ -101,6 +131,8 @@ final class AppSettings {
 
     private init() {
         engine = Engine(rawValue: defaults.string(forKey: "engine") ?? "") ?? .apple
+        parakeetVersion = ParakeetVersion(rawValue: defaults.string(forKey: "parakeetVersion") ?? "") ?? .v3
+        whisperModel = defaults.string(forKey: "whisperModel") ?? "openai_whisper-base"
         language = Language(rawValue: defaults.string(forKey: "language") ?? "") ?? .ptBR
         hotkeyMode = HotkeyMode(rawValue: defaults.string(forKey: "hotkeyMode") ?? "") ?? .hold
         hudSize = Self.loadHUDSize(from: defaults)

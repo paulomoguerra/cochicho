@@ -7,9 +7,11 @@ import Observation
 /// language change in the UI takes effect on the very next dictation, no restart.
 @MainActor
 func engineForCurrentSetting() -> any TranscriptionEngine {
-    switch AppSettings.shared.engine {
-    case .apple: AppleSpeechEngine(locale: AppSettings.shared.language.locale)
-    case .parakeet: ParakeetEngine()
+    let settings = AppSettings.shared
+    return switch settings.engine {
+    case .apple: AppleSpeechEngine(locale: settings.language.locale)
+    case .parakeet: ParakeetEngine(version: settings.parakeetVersion)
+    case .whisper: WhisperEngine(model: settings.whisperModel, language: settings.language.whisperCode)
     }
 }
 
