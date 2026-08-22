@@ -1,5 +1,5 @@
 #!/usr/bin/env swift
-// Renders the Cochicho app icon: a dot-matrix waveform "whisper" on the house dark card,
+// Renders the Eko Nami app icon: a dot-matrix waveform "whisper" on the house dark card,
 // one hot orange column. Run via `make icon`.
 import AppKit
 

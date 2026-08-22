@@ -117,7 +117,7 @@ actor WhisperEngine: TranscriptionEngine {
 
 /// Process-wide WhisperKit model manager: catalog listing, download, load, delete.
 ///
-/// Models live under Application Support/Cochicho/WhisperKit/, mirroring the Hugging
+/// Models live under Application Support/EkoNami/WhisperKit/, mirroring the Hugging
 /// Face repo layout WhisperKit expects. Only one pipeline stays loaded at a time —
 /// large-v3 alone is multiple GB of RAM.
 actor WhisperModels {
@@ -175,7 +175,7 @@ actor WhisperModels {
 
     nonisolated static var downloadBase: URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support.appendingPathComponent("Cochicho/WhisperKit", isDirectory: true)
+        return support.appendingPathComponent("EkoNami/WhisperKit", isDirectory: true)
     }
 
     nonisolated static func modelFolder(_ model: String) -> URL {

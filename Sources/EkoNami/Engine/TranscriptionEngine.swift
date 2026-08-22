@@ -21,7 +21,7 @@ struct TranscriptionChunk: Sendable {
     let isFinal: Bool
 }
 
-/// The seam that keeps Cochicho engine-agnostic. Implementing this protocol is the whole
+/// The seam that keeps Eko Nami engine-agnostic. Implementing this protocol is the whole
 /// cost of adding another open-source model.
 protocol TranscriptionEngine: Actor {
     /// Audio format the engine wants buffers delivered in. `AudioCapture` converts to it.

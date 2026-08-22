@@ -55,13 +55,13 @@ Eko Nami é grátis e open source. Um café via Lightning é bem-vindo: menu da 
 ## Build
 
 SwiftPM puro, sem projeto Xcode. `make app` monta o bundle em
-`~/Library/Caches/CochichoBuild` (fora de pastas sincronizadas — codesign odeia
+`~/Library/Caches/EkoNamiBuild` (fora de pastas sincronizadas — codesign odeia
 file providers), `make run` roda, `make icon` regenera o ícone, `swift test` roda
 os testes do corretor de dicionário.
 
-O bundle ainda se chama `Cochicho.app` (nome anterior do projeto): renomear
-binário e bundle id troca a assinatura e derruba as permissões TCC, então fica
-para uma versão maior, de uma vez só.
+Atualizando do Cochicho (nome anterior): histórico, dicionário, modelos Whisper e
+ajustes migram sozinhos no primeiro launch; Acessibilidade e microfone precisam
+ser concedidos de novo — o bundle id mudou e o TCC ancora na identidade.
 
 ## Licença
 

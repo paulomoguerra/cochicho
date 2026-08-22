@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "Cochicho",
+    name: "EkoNami",
     platforms: [.macOS("26.0")],
     dependencies: [
         .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.15.6"),
@@ -10,18 +10,18 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "Cochicho",
+            name: "EkoNami",
             dependencies: [
                 .product(name: "FluidAudio", package: "FluidAudio"),
                 .product(name: "WhisperKit", package: "WhisperKit")
             ],
-            path: "Sources/Cochicho",
+            path: "Sources/EkoNami",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
-            name: "CochichoTests",
-            dependencies: ["Cochicho"],
-            path: "Tests/CochichoTests",
+            name: "EkoNamiTests",
+            dependencies: ["EkoNami"],
+            path: "Tests/EkoNamiTests",
             swiftSettings: [.swiftLanguageMode(.v5)]
         )
     ]

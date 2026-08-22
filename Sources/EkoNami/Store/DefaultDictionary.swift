@@ -1,6 +1,6 @@
 import Foundation
 
-/// The dictionary Cochicho ships with: tech vocabulary speech engines reliably mangle,
+/// The dictionary Eko Nami ships with: tech vocabulary speech engines reliably mangle,
 /// in English and Brazilian Portuguese, compiled from what users of Wispr Flow /
 /// superwhisper / VoiceInk most commonly add by hand.
 ///
@@ -151,7 +151,7 @@ enum DefaultDictionary {
         ("n8n", ["n eight n", "ene oito ene"]),
         ("Zapier", ["zapiê"]),
         ("Obsidian", []),
-        ("Cochicho", []),
+        ("Eko Nami", ["eco nami", "eko nami"]),
     ]
 
     static var entries: [DictionaryEntry] {

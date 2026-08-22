@@ -110,7 +110,7 @@ struct DashboardView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("C O C H I C H O")
+                Text("E K O   N A M I")
                     .font(Theme.mono(22, .semibold))
                     .foregroundStyle(Theme.ink)
                 Text("VOICE → TEXT · 100% LOCAL")

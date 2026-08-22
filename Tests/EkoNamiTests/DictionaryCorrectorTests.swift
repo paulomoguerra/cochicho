@@ -1,5 +1,5 @@
 import Testing
-@testable import Cochicho
+@testable import EkoNami
 
 /// The corrector is the deterministic half of the dictionary — the pass that *guarantees*
 /// spelling. Every rule here is load-bearing and subtle enough to break silently in a

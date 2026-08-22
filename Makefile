@@ -1,14 +1,14 @@
-EXEC     := Cochicho
+EXEC     := EkoNami
 CONFIG   := release
 
 ## Build products and the assembled .app live OUTSIDE this directory: file-provider-synced
 ## folders mutate files mid-compile ("input file was modified during the build") and
 ## re-stamp com.apple.FinderInfo faster than xattr -cr can strip it, which makes codesign
 ## refuse. ~/Library/Caches is never synced.
-SCRATCH  := $(HOME)/Library/Caches/CochichoBuild/scratch
+SCRATCH  := $(HOME)/Library/Caches/EkoNamiBuild/scratch
 BUILD    := $(SCRATCH)/$(CONFIG)/$(EXEC)
-STAGE    := $(HOME)/Library/Caches/CochichoBuild
-APPNAME  := Cochicho.app
+STAGE    := $(HOME)/Library/Caches/EkoNamiBuild
+APPNAME  := Eko Nami.app
 BUNDLE   := $(STAGE)/$(APPNAME)
 CONTENTS := $(BUNDLE)/Contents
 

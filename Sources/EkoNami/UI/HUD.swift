@@ -198,7 +198,7 @@ struct HUDView: View {
 
             Spacer()
 
-            Text("COCHICHO")
+            Text("EKO NAMI")
                 .font(Theme.mono(8, .medium))
                 .tracking(2)
                 .foregroundStyle(Theme.inkFaint)

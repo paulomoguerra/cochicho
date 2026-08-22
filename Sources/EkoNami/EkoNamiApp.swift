@@ -2,14 +2,21 @@ import AppKit
 import SwiftUI
 
 @main
-struct CochichoApp: App {
+struct EkoNamiApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+
+    init() {
+        // Here, not in applicationDidFinishLaunching: SwiftUI can build the window's
+        // views (which create and seed the stores' files) before the delegate callback
+        // fires, and the migration must move those files first.
+        LegacyMigration.run()
+    }
 
     var body: some Scene {
         // WindowGroup + external-event routing so AppKit code (the status-item menu) can
         // reopen the dashboard after the user closes it — a plain `Window` scene offers no
         // way back in from outside SwiftUI. `preferring`/`allowing` pin it to one window.
-        WindowGroup("Cochicho", id: "main") {
+        WindowGroup("Eko Nami", id: "main") {
             DashboardView(controller: delegate.controller)
                 .onAppear { delegate.dashboardOpened() }
                 .handlesExternalEvents(preferring: ["main"], allowing: ["main"])
@@ -76,7 +83,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private func updateIcon() {
         guard let button = item?.button else { return }
         let name = controller.state.isActive ? "waveform.circle.fill" : "waveform"
-        button.image = NSImage(systemSymbolName: name, accessibilityDescription: "Cochicho")
+        button.image = NSImage(systemSymbolName: name, accessibilityDescription: "Eko Nami")
         button.image?.isTemplate = true
     }
 
@@ -126,7 +133,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         let open = NSMenuItem(
-            title: "Abrir Cochicho", action: #selector(openDashboard), keyEquivalent: ""
+            title: "Abrir Eko Nami", action: #selector(openDashboard), keyEquivalent: ""
         )
         open.target = self
         menu.addItem(open)
@@ -174,7 +181,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         } else {
             // Window was closed and released — route back in through the URL scheme,
             // which `handlesExternalEvents` turns into a fresh dashboard window.
-            NSWorkspace.shared.open(URL(string: "cochicho://main")!)
+            NSWorkspace.shared.open(URL(string: "ekonami://main")!)
         }
     }
 

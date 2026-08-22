@@ -17,7 +17,7 @@ struct CoffeeView: View {
                     .font(Theme.mono(10, .medium)).tracking(2)
                     .foregroundStyle(Theme.inkDim)
                 Spacer()
-                Text("COCHICHO")
+                Text("EKO NAMI")
                     .font(Theme.mono(8, .medium)).tracking(2)
                     .foregroundStyle(Theme.inkFaint)
             }

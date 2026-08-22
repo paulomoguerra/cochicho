@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Cochicho</string>
+    <string>Eko Nami</string>
     <key>CFBundleDisplayName</key>
-    <string>Cochicho</string>
+    <string>Eko Nami</string>
     <key>CFBundleIdentifier</key>
-    <string>com.mateus.cochicho</string>
+    <string>com.mateus.ekonami</string>
     <key>CFBundleExecutable</key>
-    <string>Cochicho</string>
+    <string>EkoNami</string>
     <key>CFBundleVersion</key>
     <string>1.0</string>
     <key>CFBundleShortVersionString</key>
@@ -23,19 +23,19 @@
     <key>LSUIElement</key>
     <false/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>O Cochicho usa o microfone para transcrever sua voz — tudo localmente.</string>
+    <string>O Eko Nami usa o microfone para transcrever sua voz — tudo localmente.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>O Cochicho usa o modelo de fala local do macOS para transcrever.</string>
+    <string>O Eko Nami usa o modelo de fala local do macOS para transcrever.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
             <key>CFBundleURLName</key>
-            <string>com.mateus.cochicho</string>
+            <string>com.mateus.ekonami</string>
             <key>CFBundleURLSchemes</key>
             <array>
-                <string>cochicho</string>
+                <string>ekonami</string>
             </array>
         </dict>
     </array>

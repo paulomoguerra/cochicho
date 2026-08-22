@@ -61,14 +61,15 @@ struct TileConfig: Codable, Equatable, Identifiable {
 
     var id: String { tile.rawValue }
 
-    /// Factory dashboard — screenshot pack (4-col first-fit).
+    /// Factory dashboard — Mateus's 2026-08-22 screenshot: mic | engine | stats on top,
+    /// history big under the mic, controls under stats, dictionary under the engine.
     static let defaultLayout: [TileConfig] = [
         TileConfig(tile: .mic, size: .wide),
         TileConfig(tile: .engine, size: .tall),
-        TileConfig(tile: .controls, size: .tall),
-        TileConfig(tile: .history, size: .big),
-        TileConfig(tile: .dictionary, size: .tall),
         TileConfig(tile: .stats, size: .small),
+        TileConfig(tile: .history, size: .big),
+        TileConfig(tile: .controls, size: .tall),
+        TileConfig(tile: .dictionary, size: .small),
     ]
 
     /// Pre-preset factory layout — migration only; do not use as the live default.
