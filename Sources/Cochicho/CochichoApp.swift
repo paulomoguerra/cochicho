@@ -33,8 +33,10 @@ struct CochichoApp: App {
 enum Donation {
     static let lnurl = "lnurl1dp68gurn8ghj7ampd3kx2ar0veekzar0wd5xjtnrdakj7tnhv4kxctttdehhwm30d3h82unvwqhkyctndpn82mrrdaexkwp58q7qfu9t"
 
-    /// What desktop Lightning wallets register for.
-    static var walletURL: URL? { URL(string: "lightning:\(lnurl)") }
+    /// Head and tail only — the ends are what you check against your wallet after pasting.
+    static var abbreviated: String {
+        "\(lnurl.prefix(12))…\(lnurl.suffix(8))"
+    }
 }
 
 /// The menu bar icon + menu, in AppKit.
@@ -129,20 +131,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         open.target = self
         menu.addItem(open)
 
-        let coffeeMenu = NSMenu()
-        let openWallet = NSMenuItem(
-            title: "Abrir na carteira", action: #selector(openLightningWallet), keyEquivalent: ""
+        let coffee = NSMenuItem(
+            title: "Buy me a coffee ☕️", action: #selector(showCoffee), keyEquivalent: ""
         )
-        openWallet.target = self
-        coffeeMenu.addItem(openWallet)
-        let copyAddress = NSMenuItem(
-            title: "Copiar endereço Lightning", action: #selector(copyLightningAddress),
-            keyEquivalent: ""
-        )
-        copyAddress.target = self
-        coffeeMenu.addItem(copyAddress)
-        let coffee = NSMenuItem(title: "Buy me a coffee ☕️", action: nil, keyEquivalent: "")
-        coffee.submenu = coffeeMenu
+        coffee.target = self
         menu.addItem(coffee)
 
         let quit = NSMenuItem(title: "Sair", action: #selector(quit), keyEquivalent: "q")
@@ -186,14 +178,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         }
     }
 
-    @objc private func openLightningWallet() {
-        guard let url = Donation.walletURL else { return }
-        NSWorkspace.shared.open(url)
-    }
-
-    @objc private func copyLightningAddress() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(Donation.lnurl, forType: .string)
+    @objc private func showCoffee() {
+        CoffeePanel.shared.show()
     }
 
     @objc private func quit() {

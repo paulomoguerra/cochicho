@@ -16,20 +16,15 @@ struct DictionaryCard: View {
                     trailing: "\(store.entries.filter(\.isEnabled).count) ATIVAS"
                 )
 
-                if size != .small {
-                    HStack(spacing: 6) {
-                        TextField("ouvir…", text: $newHear)
-                        Text("→")
-                            .font(Theme.mono(11))
-                            .foregroundStyle(Theme.accent)
-                        TextField("escrever…", text: $newWrite)
-                        Button("+") { add() }
-                            .buttonStyle(PillButtonStyle(prominent: true))
-                            .disabled(newWrite.trimmingCharacters(in: .whitespaces).isEmpty)
-                    }
-                    .textFieldStyle(.plain)
-                    .font(Theme.mono(11))
-                    .foregroundStyle(Theme.ink)
+                HStack(spacing: 6) {
+                    addField("ouvir…", text: $newHear)
+                    Text("→")
+                        .font(Theme.mono(11))
+                        .foregroundStyle(Theme.accent)
+                    addField("escrever…", text: $newWrite)
+                    Button("+") { add() }
+                        .buttonStyle(PillButtonStyle(prominent: true))
+                        .disabled(newWrite.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
 
                 ScrollView {
@@ -41,6 +36,19 @@ struct DictionaryCard: View {
                 }
             }
         }
+    }
+
+    /// Enter in either field submits, so adding never requires reaching for the + button.
+    private func addField(_ placeholder: String, text: Binding<String>) -> some View {
+        TextField(placeholder, text: text)
+            .textFieldStyle(.plain)
+            .font(Theme.mono(11))
+            .foregroundStyle(Theme.ink)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Color.white.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .onSubmit(add)
     }
 
     private func add() {
