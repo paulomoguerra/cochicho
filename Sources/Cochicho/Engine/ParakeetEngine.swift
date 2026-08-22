@@ -127,6 +127,16 @@ actor ParakeetModels {
     private var loaded: (version: ParakeetVersion, manager: AsrManager)?
     private var loadTask: (version: ParakeetVersion, task: Task<AsrManager, Error>)?
 
+    /// Removes a version's models from disk (and RAM, if loaded).
+    func delete(_ version: ParakeetVersion) {
+        if loaded?.version == version { loaded = nil }
+        loadTask = nil
+        try? FileManager.default.removeItem(
+            at: AsrModels.defaultCacheDirectory(for: version.asrVersion)
+        )
+        Log.speech.info("Parakeet: deleted \(version.rawValue, privacy: .public)")
+    }
+
     /// Loads once per version; concurrent callers await the same task rather than racing
     /// to download.
     func manager(version: ParakeetVersion = .v3) async throws -> AsrManager {

@@ -14,7 +14,9 @@ struct CochichoApp: App {
                 .onAppear { delegate.dashboardOpened() }
                 .handlesExternalEvents(preferring: ["main"], allowing: ["main"])
         }
-        .windowResizability(.contentSize)
+        // `.contentMinSize`, not `.contentSize`: the bento grid fills whatever width the
+        // user drags the window to; tiles scale with it.
+        .windowResizability(.contentMinSize)
         .windowStyle(.hiddenTitleBar)
         .handlesExternalEvents(matching: ["main"])
         .commands {

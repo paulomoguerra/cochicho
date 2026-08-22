@@ -3,6 +3,7 @@ import SwiftUI
 // MARK: - 05 DICTIONARY
 
 struct DictionaryCard: View {
+    var size: TileSize = .tall
     private var store: DictionaryStore { .shared }
     @State private var newHear = ""
     @State private var newWrite = ""
@@ -15,19 +16,21 @@ struct DictionaryCard: View {
                     trailing: "\(store.entries.filter(\.isEnabled).count) ATIVAS"
                 )
 
-                HStack(spacing: 6) {
-                    TextField("ouvir…", text: $newHear)
-                    Text("→")
-                        .font(Theme.mono(11))
-                        .foregroundStyle(Theme.accent)
-                    TextField("escrever…", text: $newWrite)
-                    Button("+") { add() }
-                        .buttonStyle(PillButtonStyle(prominent: true))
-                        .disabled(newWrite.trimmingCharacters(in: .whitespaces).isEmpty)
+                if size != .small {
+                    HStack(spacing: 6) {
+                        TextField("ouvir…", text: $newHear)
+                        Text("→")
+                            .font(Theme.mono(11))
+                            .foregroundStyle(Theme.accent)
+                        TextField("escrever…", text: $newWrite)
+                        Button("+") { add() }
+                            .buttonStyle(PillButtonStyle(prominent: true))
+                            .disabled(newWrite.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                    .textFieldStyle(.plain)
+                    .font(Theme.mono(11))
+                    .foregroundStyle(Theme.ink)
                 }
-                .textFieldStyle(.plain)
-                .font(Theme.mono(11))
-                .foregroundStyle(Theme.ink)
 
                 ScrollView {
                     LazyVStack(spacing: 4) {

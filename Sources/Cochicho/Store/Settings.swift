@@ -128,6 +128,14 @@ final class AppSettings {
     var soundEnabled: Bool {
         didSet { defaults.set(soundEnabled, forKey: "soundEnabled") }
     }
+    /// User-arranged dashboard tiles: order = position, each with its size preset.
+    var tileLayout: [TileConfig] {
+        didSet {
+            if let data = try? JSONEncoder().encode(tileLayout) {
+                defaults.set(data, forKey: "tileLayout")
+            }
+        }
+    }
 
     private init() {
         engine = Engine(rawValue: defaults.string(forKey: "engine") ?? "") ?? .apple
@@ -146,6 +154,16 @@ final class AppSettings {
         } else {
             hotkey = .rightOption
         }
+
+        // Any tile missing from the saved layout (say, added in an update) is appended
+        // small at the end rather than vanishing.
+        var layout = (defaults.data(forKey: "tileLayout"))
+            .flatMap { try? JSONDecoder().decode([TileConfig].self, from: $0) }
+            ?? TileConfig.defaultLayout
+        for tile in Tile.allCases where !layout.contains(where: { $0.tile == tile }) {
+            layout.append(TileConfig(tile: tile, size: .small))
+        }
+        tileLayout = layout
     }
 
     /// One-shot map from the old PADRÃO/MÉDIO/MÍNIMO raw values onto the renamed cases.

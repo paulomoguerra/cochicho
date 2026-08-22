@@ -5,6 +5,7 @@ import SwiftUI
 
 struct ControlsCard: View {
     let controller: DictationController
+    var size: TileSize = .tall
     private var settings: AppSettings { .shared }
     @State private var recordingKey = false
     @State private var keyMonitor: Any?
@@ -57,27 +58,31 @@ struct ControlsCard: View {
                     )
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("TAMANHO DO HUD")
-                        .font(Theme.mono(9)).tracking(1.5).foregroundStyle(Theme.inkFaint)
-                    SegmentPicker(
-                        options: HUDSize.allCases.map { ($0, $0.displayName) },
-                        selection: Binding(
-                            get: { settings.hudSize },
-                            set: { settings.hudSize = $0 }
+                if size != .small {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("TAMANHO DO HUD")
+                            .font(Theme.mono(9)).tracking(1.5).foregroundStyle(Theme.inkFaint)
+                        SegmentPicker(
+                            options: HUDSize.allCases.map { ($0, $0.displayName) },
+                            selection: Binding(
+                                get: { settings.hudSize },
+                                set: { settings.hudSize = $0 }
+                            )
                         )
-                    )
+                    }
                 }
 
-                Divider().overlay(Theme.cardBorder)
+                if size.isRoomy {
+                    Divider().overlay(Theme.cardBorder)
 
-                FlagRow(label: "ÍCONE NA MENUBAR", isOn: menuBarBinding)
-                FlagRow(label: "ÍCONE NO DOCK", isOn: dockBinding)
-                FlagRow(label: "ABRIR AO INICIAR", isOn: launchAtLoginBinding)
-                FlagRow(label: "SONS", isOn: Binding(
-                    get: { settings.soundEnabled },
-                    set: { settings.soundEnabled = $0 }
-                ))
+                    FlagRow(label: "ÍCONE NA MENUBAR", isOn: menuBarBinding)
+                    FlagRow(label: "ÍCONE NO DOCK", isOn: dockBinding)
+                    FlagRow(label: "ABRIR AO INICIAR", isOn: launchAtLoginBinding)
+                    FlagRow(label: "SONS", isOn: Binding(
+                        get: { settings.soundEnabled },
+                        set: { settings.soundEnabled = $0 }
+                    ))
+                }
 
                 if !controller.hotkeyArmed {
                     Button("LIBERAR ACESSIBILIDADE") {

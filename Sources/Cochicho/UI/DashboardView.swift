@@ -4,29 +4,89 @@ struct DashboardView: View {
     let controller: DictationController
     private var settings: AppSettings { .shared }
 
+    /// Layout-edit mode: tiles show their size picker and become draggable.
+    @State private var editingLayout = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            header
-            HStack(spacing: 14) {
-                MicCard(controller: controller)
-                EngineCard(controller: controller)
-                StatsCard()
-            }
-            .frame(height: 240)
-            HStack(spacing: 14) {
-                HistoryCard()
-                    .frame(maxWidth: .infinity)
-                VStack(spacing: 14) {
-                    DictionaryCard()
-                    ControlsCard(controller: controller)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                header
+                BentoLayout(spacing: 14) {
+                    ForEach(settings.tileLayout) { config in
+                        tileView(config)
+                            .tileSpan(config.size)
+                    }
                 }
-                .frame(width: 320)
             }
+            .padding(20)
         }
-        .padding(20)
         .frame(minWidth: 980, minHeight: 700)
         .background(Theme.bg)
         .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder
+    private func tileView(_ config: TileConfig) -> some View {
+        let card = Group {
+            switch config.tile {
+            case .mic: MicCard(controller: controller, size: config.size)
+            case .engine: EngineCard(controller: controller, size: config.size)
+            case .stats: StatsCard(size: config.size)
+            case .history: HistoryCard(size: config.size)
+            case .dictionary: DictionaryCard(size: config.size)
+            case .controls: ControlsCard(controller: controller, size: config.size)
+            }
+        }
+
+        if editingLayout {
+            card
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Theme.accent.opacity(0.55), lineWidth: 1)
+                )
+                .overlay(alignment: .bottomTrailing) {
+                    sizePicker(for: config)
+                        .padding(8)
+                }
+                .draggable(config.tile.rawValue)
+                .dropDestination(for: String.self) { items, _ in
+                    guard let raw = items.first, let dragged = Tile(rawValue: raw) else { return false }
+                    move(dragged, onto: config.tile)
+                    return true
+                }
+        } else {
+            card
+        }
+    }
+
+    private func sizePicker(for config: TileConfig) -> some View {
+        HStack(spacing: 3) {
+            ForEach(TileSize.allCases, id: \.self) { size in
+                Button(size.label) {
+                    guard let index = settings.tileLayout.firstIndex(where: { $0.tile == config.tile })
+                    else { return }
+                    settings.tileLayout[index].size = size
+                }
+                .buttonStyle(.plain)
+                .font(Theme.mono(9, .semibold))
+                .foregroundStyle(config.size == size ? Color.black : Theme.inkDim)
+                .frame(width: 20, height: 20)
+                .background(config.size == size ? Theme.accent : Theme.card.opacity(0.9))
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Theme.cardBorder, lineWidth: 1))
+            }
+        }
+    }
+
+    /// Drop = take the target tile's slot; everything else shifts around it.
+    private func move(_ dragged: Tile, onto target: Tile) {
+        var layout = settings.tileLayout
+        guard let from = layout.firstIndex(where: { $0.tile == dragged }),
+              let to = layout.firstIndex(where: { $0.tile == target }),
+              from != to else { return }
+        let item = layout.remove(at: from)
+        layout.insert(item, at: to)
+        settings.tileLayout = layout
     }
 
     private var header: some View {
@@ -41,16 +101,25 @@ struct DashboardView: View {
                     .foregroundStyle(Theme.inkFaint)
             }
             Spacer()
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 7, height: 7)
-                Text(statusLine)
-                    .font(Theme.mono(10, .medium))
-                    .tracking(1)
-                    .foregroundStyle(Theme.inkDim)
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 7, height: 7)
+                    Text(statusLine)
+                        .font(Theme.mono(10, .medium))
+                        .tracking(1)
+                        .foregroundStyle(Theme.inkDim)
+                }
+
+                if editingLayout {
+                    Button("PADRÃO") { settings.tileLayout = TileConfig.defaultLayout }
+                        .buttonStyle(PillButtonStyle())
+                }
+                Button(editingLayout ? "PRONTO" : "LAYOUT") { editingLayout.toggle() }
+                    .buttonStyle(PillButtonStyle(prominent: editingLayout))
             }
-            .padding(.top, 6)
+            .padding(.top, 2)
         }
     }
 
@@ -77,6 +146,7 @@ struct DashboardView: View {
 
 struct MicCard: View {
     let controller: DictationController
+    var size: TileSize = .wide
     @State private var levels: [Float] = Array(repeating: 0, count: 40)
 
     var body: some View {
@@ -88,20 +158,23 @@ struct MicCard: View {
                     trailingColor: controller.state.isActive ? Theme.accent : Theme.inkDim
                 )
 
-                Text(displayText)
-                    .font(Theme.mono(15))
-                    .foregroundStyle(controller.transcript.isEmpty ? Theme.inkFaint : Theme.ink)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, minHeight: 40, alignment: .topLeading)
+                if size != .small {
+                    Text(displayText)
+                        .font(Theme.mono(15))
+                        .foregroundStyle(controller.transcript.isEmpty ? Theme.inkFaint : Theme.ink)
+                        .lineLimit(size.isRoomy ? 5 : 2)
+                        .frame(maxWidth: .infinity, minHeight: 40, alignment: .topLeading)
+                }
 
                 // No TimelineView: the Canvas already redraws when `levels` mutates, and a
                 // timeline forces 20 fps of redraws even while the app sits idle.
-                DotWaveform(levels: levels, idle: !controller.state.isActive)
+                DotWaveform(levels: levels, rows: size.isRoomy ? 9 : 7, idle: !controller.state.isActive)
                     .onChange(of: controller.level) { _, new in
                         levels.append(new)
                         if levels.count > 80 { levels.removeFirst(levels.count - 80) }
                     }
-                    .frame(height: 56)
+                    .frame(height: size.isRoomy ? 88 : (size == .small ? 44 : 56))
+                    .frame(maxHeight: size.isRoomy ? .infinity : nil)
 
                 HStack {
                     Button(controller.state.isActive ? "PARAR" : "GRAVAR") {
@@ -111,7 +184,9 @@ struct MicCard: View {
 
                     Spacer()
 
-                    Stat(label: "TECLA", value: AppSettings.shared.hotkey.displayName)
+                    if size != .small {
+                        Stat(label: "TECLA", value: AppSettings.shared.hotkey.displayName)
+                    }
                 }
             }
         }
@@ -140,6 +215,7 @@ struct MicCard: View {
 
 struct EngineCard: View {
     let controller: DictationController
+    var size: TileSize = .tall
     private var settings: AppSettings { .shared }
 
     /// Whisper catalog — seeded with the curated list, replaced by the live Hugging Face
@@ -149,12 +225,14 @@ struct EngineCard: View {
     @State private var downloadProgress: Double = 0
     @State private var failedModel: String?
     @State private var parakeetDownloading = false
+    /// Measured on-disk bytes per downloaded model; refreshed after download/delete.
+    @State private var diskSizes: [String: Int64] = [:]
     /// Bumped after a download or delete so the `isDownloaded` disk checks re-run.
     @State private var diskVersion = 0
 
     var body: some View {
         Card {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 CardHeader(number: "02", title: "ENGINE")
 
                 SegmentPicker(
@@ -172,15 +250,15 @@ struct EngineCard: View {
                 }
             }
         }
-        .frame(width: 250)
         .task { catalog = await WhisperModels.availableModels() }
+        .task(id: diskVersion) { await measureDiskSizes() }
     }
 
     // MARK: - Apple
 
     private var appleSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            languagePicker
+            if size != .small { languagePicker }
             Spacer()
             statusLine("MODELO DO SISTEMA · NEURAL ENGINE")
         }
@@ -190,8 +268,10 @@ struct EngineCard: View {
 
     private var parakeetSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("VERSÃO")
-                .font(Theme.mono(9)).tracking(1.5).foregroundStyle(Theme.inkFaint)
+            if size != .small {
+                Text("VERSÃO")
+                    .font(Theme.mono(9)).tracking(1.5).foregroundStyle(Theme.inkFaint)
+            }
             SegmentPicker(
                 options: ParakeetVersion.allCases.map { ($0, $0.displayName) },
                 selection: Binding(
@@ -199,16 +279,33 @@ struct EngineCard: View {
                     set: { settings.parakeetVersion = $0 }
                 )
             )
-            Text(settings.parakeetVersion == .v3
-                 ? "DETECTA O IDIOMA SOZINHO · 25 LÍNGUAS"
-                 : "SÓ INGLÊS · UM POUCO MAIS PRECISO EM EN")
-                .font(Theme.mono(8)).tracking(1).foregroundStyle(Theme.inkFaint)
+            if size != .small {
+                Text(settings.parakeetVersion == .v3
+                     ? "DETECTA O IDIOMA SOZINHO · 25 LÍNGUAS"
+                     : "SÓ INGLÊS · UM POUCO MAIS PRECISO EM EN")
+                    .font(Theme.mono(8)).tracking(1).foregroundStyle(Theme.inkFaint)
+            }
 
             Spacer()
 
             let _ = diskVersion
             if ParakeetModels.isDownloaded(settings.parakeetVersion) {
-                statusLine("PARAKEET \(settings.parakeetVersion.rawValue.uppercased()) · LOCAL")
+                HStack {
+                    statusLine("PARAKEET \(settings.parakeetVersion.rawValue.uppercased()) · LOCAL")
+                    Spacer()
+                    if size.isRoomy {
+                        Button("EXCLUIR") {
+                            let version = settings.parakeetVersion
+                            Task {
+                                await ParakeetModels.shared.delete(version)
+                                diskVersion += 1
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .font(Theme.mono(8, .medium)).tracking(1)
+                        .foregroundStyle(Theme.inkFaint)
+                    }
+                }
             } else {
                 Button(parakeetDownloading ? "BAIXANDO…" : "BAIXAR MODELO (~470 MB)") {
                     parakeetDownloading = true
@@ -229,16 +326,27 @@ struct EngineCard: View {
 
     private var whisperSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            languagePicker
+            if size != .small { languagePicker }
 
-            Text("MODELO")
-                .font(Theme.mono(9)).tracking(1.5).foregroundStyle(Theme.inkFaint)
-            ScrollView {
-                LazyVStack(spacing: 3) {
-                    let _ = diskVersion
-                    ForEach(catalog, id: \.self) { model in
-                        whisperRow(model)
+            if size == .small {
+                // Tiny tile: just what's active. Grow the tile to manage the catalog.
+                Spacer()
+                statusLine(WhisperModels.displayName(settings.whisperModel))
+                Text("AUMENTE O TILE PARA GERENCIAR")
+                    .font(Theme.mono(8)).tracking(1).foregroundStyle(Theme.inkFaint)
+            } else {
+                Text("MODELO")
+                    .font(Theme.mono(9)).tracking(1.5).foregroundStyle(Theme.inkFaint)
+                ScrollView {
+                    LazyVStack(spacing: 3) {
+                        let _ = diskVersion
+                        ForEach(catalog, id: \.self) { model in
+                            whisperRow(model)
+                        }
                     }
+                }
+                if size.isRoomy {
+                    diskUsageFooter
                 }
             }
         }
@@ -256,8 +364,12 @@ struct EngineCard: View {
 
             Spacer(minLength: 4)
 
-            if let size = WhisperModels.approximateSize(of: model), !downloaded {
-                Text(size)
+            if downloaded, let bytes = diskSizes[model] {
+                Text(Self.formatBytes(bytes))
+                    .font(Theme.mono(8))
+                    .foregroundStyle(Theme.inkFaint)
+            } else if !downloaded, let size = WhisperModels.approximateSize(of: model) {
+                Text("~\(size)")
                     .font(Theme.mono(8))
                     .foregroundStyle(Theme.inkFaint)
             }
@@ -268,16 +380,19 @@ struct EngineCard: View {
             } else if failedModel == model {
                 Text("ERRO ↻")
                     .font(Theme.mono(8, .medium)).foregroundStyle(Theme.accent)
-            } else if selected {
-                Text("✓")
-                    .font(Theme.mono(9, .semibold)).foregroundStyle(Theme.accent)
-            } else if downloaded {
-                Button("×") { delete(model) }
-                    .buttonStyle(.plain)
-                    .font(Theme.mono(10)).foregroundStyle(Theme.inkFaint)
             } else {
-                Text("BAIXAR")
-                    .font(Theme.mono(8, .medium)).foregroundStyle(Theme.inkDim)
+                if selected {
+                    Text("✓")
+                        .font(Theme.mono(9, .semibold)).foregroundStyle(Theme.accent)
+                }
+                if downloaded {
+                    Button("×") { delete(model) }
+                        .buttonStyle(.plain)
+                        .font(Theme.mono(10)).foregroundStyle(Theme.inkFaint)
+                } else {
+                    Text("BAIXAR")
+                        .font(Theme.mono(8, .medium)).foregroundStyle(Theme.inkDim)
+                }
             }
         }
         .padding(.horizontal, 8)
@@ -286,6 +401,14 @@ struct EngineCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
         .onTapGesture { tapped(model, downloaded: downloaded) }
+    }
+
+    private var diskUsageFooter: some View {
+        let total = diskSizes.values.reduce(0, +)
+        return HStack {
+            statusLine("USO EM DISCO: \(Self.formatBytes(total))")
+            Spacer()
+        }
     }
 
     private func tapped(_ model: String, downloaded: Bool) {
@@ -312,11 +435,32 @@ struct EngineCard: View {
         }
     }
 
+    /// Any downloaded model can go, including the selected one — the selection just falls
+    /// back to another model on disk (or the default) instead of blocking the delete.
     private func delete(_ model: String) {
         Task {
             await WhisperModels.shared.delete(model)
+            if settings.whisperModel == model {
+                let remaining = catalog.first { $0 != model && WhisperModels.isDownloaded($0) }
+                settings.whisperModel = remaining ?? "openai_whisper-base"
+            }
             diskVersion += 1
         }
+    }
+
+    private func measureDiskSizes() async {
+        let models = catalog.filter { WhisperModels.isDownloaded($0) }
+        var sizes: [String: Int64] = [:]
+        for model in models {
+            sizes[model] = await WhisperModels.diskSize(of: model)
+        }
+        diskSizes = sizes
+    }
+
+    private static func formatBytes(_ bytes: Int64) -> String {
+        guard bytes > 0 else { return "0 MB" }
+        let mb = Double(bytes) / 1_000_000
+        return mb >= 1000 ? String(format: "%.1f GB", mb / 1000) : String(format: "%.0f MB", mb)
     }
 
     // MARK: - Shared pieces
@@ -347,6 +491,7 @@ struct EngineCard: View {
 // MARK: - 03 STATS
 
 struct StatsCard: View {
+    var size: TileSize = .small
     private var history: HistoryStore { .shared }
 
     var body: some View {
@@ -358,9 +503,12 @@ struct StatsCard: View {
                         value: "\(history.entries.count)",
                         caption: "DITADOS"
                     )
-                    .frame(width: 120, height: 120)
+                    .frame(
+                        width: size == .small ? 96 : 120,
+                        height: size == .small ? 96 : 120
+                    )
 
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: size == .small ? 10 : 14) {
                         Stat(label: "PALAVRAS", value: "\(history.totalWords)")
                         Stat(label: "ÁUDIO", value: minutes(history.totalSeconds))
                         Stat(
@@ -368,16 +516,29 @@ struct StatsCard: View {
                             value: "\(todayCount)",
                             color: todayCount > 0 ? Theme.accent : Theme.ink
                         )
+                        if size.isRoomy {
+                            Stat(label: "MÉDIA/DITADO", value: "\(averageWords)W")
+                            Stat(label: "PROC MÉDIO", value: averageProcess)
+                        }
                     }
                 }
                 .frame(maxHeight: .infinity)
             }
         }
-        .frame(width: 280)
     }
 
     private var todayCount: Int {
         history.entries.filter { Calendar.current.isDateInToday($0.date) }.count
+    }
+
+    private var averageWords: Int {
+        history.entries.isEmpty ? 0 : history.totalWords / history.entries.count
+    }
+
+    private var averageProcess: String {
+        guard !history.entries.isEmpty else { return "—" }
+        let total = history.entries.reduce(0) { $0 + $1.processSeconds }
+        return String(format: "%.1fs", total / Double(history.entries.count))
     }
 
     private func minutes(_ seconds: Double) -> String {

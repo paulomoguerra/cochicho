@@ -4,6 +4,7 @@ import SwiftUI
 // MARK: - 04 HISTORY
 
 struct HistoryCard: View {
+    var size: TileSize = .big
     private var history: HistoryStore { .shared }
     @State private var query = ""
     @State private var copiedID: UUID?
@@ -23,14 +24,16 @@ struct HistoryCard: View {
                     trailing: "\(history.entries.count)"
                 )
 
-                TextField("buscar…", text: $query)
-                    .textFieldStyle(.plain)
-                    .font(Theme.mono(11))
-                    .foregroundStyle(Theme.ink)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.05))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                if size != .small {
+                    TextField("buscar…", text: $query)
+                        .textFieldStyle(.plain)
+                        .font(Theme.mono(11))
+                        .foregroundStyle(Theme.ink)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.05))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
 
                 if filtered.isEmpty {
                     Spacer()
@@ -61,17 +64,19 @@ struct HistoryCard: View {
                 Text(entry.date, format: .dateTime.day().month(.twoDigits).hour().minute())
                     .font(Theme.mono(9))
                     .foregroundStyle(Theme.inkFaint)
-                Text(entry.engine)
-                    .font(Theme.mono(8, .medium))
-                    .tracking(1)
-                    .foregroundStyle(Theme.inkDim)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.white.opacity(0.06))
-                    .clipShape(Capsule())
-                Text(entry.language)
-                    .font(Theme.mono(8))
-                    .foregroundStyle(Theme.inkFaint)
+                if size != .small {
+                    Text(entry.engine)
+                        .font(Theme.mono(8, .medium))
+                        .tracking(1)
+                        .foregroundStyle(Theme.inkDim)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.white.opacity(0.06))
+                        .clipShape(Capsule())
+                    Text(entry.language)
+                        .font(Theme.mono(8))
+                        .foregroundStyle(Theme.inkFaint)
+                }
                 Spacer()
                 Text(copiedID == entry.id ? "COPIADO ✓" : "\(entry.wordCount)W")
                     .font(Theme.mono(8, .medium))
@@ -89,7 +94,7 @@ struct HistoryCard: View {
             Text(entry.text)
                 .font(Theme.mono(11))
                 .foregroundStyle(Theme.ink)
-                .lineLimit(3)
+                .lineLimit(size == .small ? 1 : 3)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(10)

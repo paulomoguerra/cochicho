@@ -221,6 +221,28 @@ actor WhisperModels {
         Log.speech.info("Whisper: deleted \(model, privacy: .public)")
     }
 
+    /// Actual bytes on disk for a downloaded model — what the catalog shows next to it.
+    static func diskSize(of model: String) async -> Int64 {
+        let folder = modelFolder(model)
+        return await Task.detached(priority: .utility) {
+            measureFolder(folder)
+        }.value
+    }
+
+    /// Synchronous on purpose: `FileManager.enumerator` can't be iterated from an async
+    /// context (its iterator isn't concurrency-safe).
+    private nonisolated static func measureFolder(_ folder: URL) -> Int64 {
+        guard let enumerator = FileManager.default.enumerator(
+            at: folder, includingPropertiesForKeys: [.totalFileAllocatedSizeKey]
+        ) else { return 0 }
+        var total: Int64 = 0
+        for case let url as URL in enumerator {
+            let values = try? url.resourceValues(forKeys: [.totalFileAllocatedSizeKey])
+            total += Int64(values?.totalFileAllocatedSize ?? 0)
+        }
+        return total
+    }
+
     private var loaded: (model: String, pipe: WhisperKit)?
     private var loadTask: (model: String, task: Task<WhisperKit, Error>)?
 
