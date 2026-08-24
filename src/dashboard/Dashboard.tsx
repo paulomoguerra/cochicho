@@ -302,7 +302,7 @@ function renderTile(
   },
 ) {
   switch (tile) {
-    case "Mic":
+    case "mic":
       return (
         <MicTile
           size={size}
@@ -313,11 +313,11 @@ function renderTile(
           hotkeyWarning={ctx.hotkeyWarning}
         />
       );
-    case "Engine":
+    case "engine":
       return <EngineTile size={size} settings={ctx.settings} isMac={ctx.isMac} />;
-    case "Stats":
+    case "stats":
       return <StatsTile size={size} entries={ctx.history} totals={ctx.totals} />;
-    case "History":
+    case "history":
       return (
         <HistoryTile
           size={size}
@@ -325,14 +325,14 @@ function renderTile(
           saveHistory={ctx.settings.save_history}
         />
       );
-    case "Dictionary":
+    case "dictionary":
       return (
         <DictionaryTile
           entries={ctx.entries}
           dictionaryEnabled={ctx.settings.dictionary_enabled}
         />
       );
-    case "Controls":
+    case "controls":
       return (
         <ControlsTile
           size={size}

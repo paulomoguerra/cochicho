@@ -60,8 +60,16 @@ export default function EnginePicker({ onDone }: { onDone: () => void }) {
   ];
 
   return (
-    <div className="dash" style={{ display: "grid", gap: 14, maxWidth: 520 }}>
-      <div className="card">
+    <div
+      className="dash"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: "100%",
+      }}
+    >
+      <div className="card" style={{ width: "100%", maxWidth: 520 }}>
         <div className="card-header">
           <span className="card-num">00</span>
           <span className="card-title">ENGINE</span>

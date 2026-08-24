@@ -447,10 +447,16 @@ fn create_hud_window(app: &tauri::App) -> Result<(), tauri::Error> {
     }
 
     let window = builder.build()?;
-    let _ = window.set_ignore_cursor_events(true);
 
+    // No Linux a janela começa invisível e o GdkWindow só é realizado no primeiro
+    // show(); chamar set_ignore_cursor_events antes disso faz o tao dar unwrap em
+    // None dentro do dispatch do glib e aborta o processo. Por isso no Linux isso
+    // acontece em DictationController::show_hud, após o show().
     #[cfg(target_os = "macos")]
-    crate::platform::hud_macos::apply_nonactivating_panel(&window);
+    {
+        let _ = window.set_ignore_cursor_events(true);
+        crate::platform::hud_macos::apply_nonactivating_panel(&window);
+    }
 
     Ok(())
 }

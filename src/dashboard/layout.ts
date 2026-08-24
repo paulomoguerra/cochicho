@@ -7,30 +7,30 @@ export const ROW_HEIGHT = 234;
 export const GRID_GAP = 14;
 
 export const DEFAULT_LAYOUT: TileConfig[] = [
-  { tile: "Mic", size: "wide" },
-  { tile: "Engine", size: "tall" },
-  { tile: "Stats", size: "small" },
-  { tile: "History", size: "big" },
-  { tile: "Controls", size: "tall" },
-  { tile: "Dictionary", size: "small" },
+  { tile: "mic", size: "wide" },
+  { tile: "engine", size: "tall" },
+  { tile: "stats", size: "small" },
+  { tile: "history", size: "big" },
+  { tile: "controls", size: "tall" },
+  { tile: "dictionary", size: "small" },
 ];
 
 export const TILE_TITLE: Record<TileId, string> = {
-  Mic: "MIC",
-  Engine: "ENGINE",
-  Stats: "STATS",
-  History: "HISTÓRICO",
-  Dictionary: "DICIONÁRIO",
-  Controls: "CONTROLES",
+  mic: "MIC",
+  engine: "ENGINE",
+  stats: "STATS",
+  history: "HISTÓRICO",
+  dictionary: "DICIONÁRIO",
+  controls: "CONTROLES",
 };
 
 export const TILE_NUMBER: Record<TileId, string> = {
-  Mic: "01",
-  Engine: "02",
-  Stats: "03",
-  History: "04",
-  Dictionary: "05",
-  Controls: "06",
+  mic: "01",
+  engine: "02",
+  stats: "03",
+  history: "04",
+  dictionary: "05",
+  controls: "06",
 };
 
 export const SIZE_LABEL: Record<TileSize, string> = {

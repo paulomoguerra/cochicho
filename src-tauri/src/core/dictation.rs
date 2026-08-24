@@ -478,6 +478,10 @@ impl DictationController {
     fn show_hud(deps: &Deps) {
         if let Some(hud) = deps.app.get_webview_window("hud") {
             let _ = hud.show();
+            // No Linux o GdkWindow só existe após o show; é seguro ignorar o cursor
+            // aqui (antes disso o tao aborta o processo — ver create_hud_window).
+            #[cfg(target_os = "linux")]
+            let _ = hud.set_ignore_cursor_events(true);
         }
     }
 }

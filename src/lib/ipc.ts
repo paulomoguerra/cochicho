@@ -10,8 +10,8 @@ export type HotkeyMode = "hold" | "toggle";
 export type HudSize = "minimal" | "medium" | "large";
 export type TerminalPaste = "auto" | "always" | "never";
 
-/** Serde unit variants sem rename_all → PascalCase. */
-export type TileId = "Mic" | "Engine" | "Stats" | "History" | "Dictionary" | "Controls";
+/** Bate com `Tile` em settings.rs (`rename_all = "lowercase"`). */
+export type TileId = "mic" | "engine" | "stats" | "history" | "dictionary" | "controls";
 export type TileSize = "small" | "wide" | "tall" | "big";
 
 export interface TileConfig {
