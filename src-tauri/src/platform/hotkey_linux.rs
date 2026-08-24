@@ -10,7 +10,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use evdev::{EventSummary, KeyCode};
-use futures_util::StreamExt;
 
 use crate::core::settings::HotkeySpec;
 
@@ -64,13 +63,13 @@ impl HotkeyMonitor {
             let running = self.running.clone();
 
             self.tasks.push(tokio::spawn(async move {
-                futures_util::pin_mut!(stream);
+                let mut stream = stream;
                 loop {
                     if !running.load(Ordering::SeqCst) {
                         break;
                     }
-                    match stream.next().await {
-                        Some(Ok(event)) => {
+                    match stream.next_event().await {
+                        Ok(event) => {
                             if let EventSummary::Key(_, code, value) = event.destructure() {
                                 if code != target {
                                     continue;
@@ -83,11 +82,10 @@ impl HotkeyMonitor {
                                 }
                             }
                         }
-                        Some(Err(e)) => {
+                        Err(e) => {
                             log::warn!("evdev error on {:?}: {e}", path);
                             break;
                         }
-                        None => break,
                     }
                 }
             }));

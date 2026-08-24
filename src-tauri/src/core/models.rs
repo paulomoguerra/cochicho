@@ -115,13 +115,13 @@ pub fn models_dir() -> PathBuf {
 /// em /Applications — dev nunca lê nem escreve no diretório de prod. A migração
 /// dos dados do app Swift (M4) acontece só em build release.
 pub fn data_dir() -> PathBuf {
-    let dir_name = if cfg!(debug_assertions) {
-        "EkoNami-dev"
-    } else {
-        "EkoNami"
-    };
     #[cfg(target_os = "macos")]
     {
+        let dir_name = if cfg!(debug_assertions) {
+            "EkoNami-dev"
+        } else {
+            "EkoNami"
+        };
         dirs::home_dir()
             .unwrap_or_default()
             .join("Library/Application Support")
