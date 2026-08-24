@@ -1,0 +1,51 @@
+[package]
+name = "ekonami"
+version = "0.1.0"
+description = "Eko Nami — ditado por voz 100% local (macOS + Linux)"
+edition = "2021"
+rust-version = "1.85"
+
+[lib]
+name = "ekonami_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+log = "0.4"
+async-trait = "0.1.92"
+thiserror = "2.0.20"
+dirs = "6.0.0"
+fancy-regex = "0.19.0"
+regex = "1.13.1"
+unicode-normalization = "0.1.25"
+parking_lot = "0.12.5"
+once_cell = "1.21.4"
+env_logger = "0.11.11"
+futures-util = "0.3.34"
+cpal = "0.18.2"
+rubato = "0.16.2"
+whisper-rs = "0.16.0"
+uuid = { version = "1.25.0", features = ["v4", "serde"] }
+chrono = { version = "0.4.45", features = ["serde"] }
+arboard = { version = "3.6.1", features = ["wayland-data-control"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "stream"] }
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+evdev = { version = "0.13.2", features = ["tokio"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10.1"
+core-graphics = "0.25.0"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSWindow", "NSGraphics"] }
+objc2-core-graphics = "0.3"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSThread"] }

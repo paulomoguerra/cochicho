@@ -1,4 +1,17 @@
+# Node / Vite
+node_modules/
+dist/
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# Swift bridge + legacy SwiftPM
 .build/
 .swiftpm/
+
+# OS
 .DS_Store
-Support/AppIcon.iconset/
+
+# Legacy iconset (regenerado via makeicon.swift)
+legacy-macos/Support/AppIcon.iconset/
