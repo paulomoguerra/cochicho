@@ -15,7 +15,7 @@ use crate::core::settings::HotkeySpec;
 
 pub struct HotkeyMonitor {
     running: Arc<AtomicBool>,
-    tasks: Vec<tokio::task::JoinHandle<()>>,
+    tasks: Vec<tauri::async_runtime::JoinHandle<()>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -54,16 +54,21 @@ impl HotkeyMonitor {
                 continue;
             }
 
-            let Ok(stream) = device.into_event_stream() else {
-                continue;
-            };
-
             let on_press = on_press.clone();
             let on_release = on_release.clone();
             let running = self.running.clone();
 
-            self.tasks.push(tokio::spawn(async move {
-                let mut stream = stream;
+            // into_event_stream() precisa do reactor Tokio — por isso abre DENTRO do
+            // spawn (o setup do Tauri não está num EnterGuard). Usamos o runtime do
+            // Tauri, não tokio::spawn solto.
+            self.tasks.push(tauri::async_runtime::spawn(async move {
+                let mut stream = match device.into_event_stream() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::warn!("evdev open {:?}: {e}", path);
+                        return;
+                    }
+                };
                 loop {
                     if !running.load(Ordering::SeqCst) {
                         break;
