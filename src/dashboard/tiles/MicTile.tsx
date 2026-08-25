@@ -41,6 +41,7 @@ export function MicTile({
   hotkeyWarning: string | null;
 }) {
   const [levels, setLevels] = useState<number[]>(() => Array.from({ length: 40 }, () => 0));
+  const [actionError, setActionError] = useState<string | null>(null);
   const active = state === "listening" || state === "starting";
   const busy = state === "starting" || state === "finishing";
   const roomy = isRoomy(size);
@@ -57,7 +58,18 @@ export function MicTile({
     };
   }, []);
 
-  let display = transcript;
+  useEffect(() => {
+    if (state !== "starting") return;
+    let step = 0;
+    const timer = window.setInterval(() => {
+      step += 1;
+      const level = 0.18 + (Math.sin(step * 0.75) + 1) * 0.08;
+      setLevels((prev) => [...prev.slice(-79), level]);
+    }, 90);
+    return () => window.clearInterval(timer);
+  }, [state]);
+
+  let display = actionError ?? transcript;
   if (state === "failed" && error) display = error;
   else if (!transcript) display = active ? "..." : "Segure a tecla e fale.";
 
@@ -97,7 +109,8 @@ export function MicTile({
             prominent
             disabled={busy}
             onClick={() => {
-              void dictationToggle();
+              setActionError(null);
+              void dictationToggle().catch((reason) => setActionError(String(reason)));
             }}
           >
             {busy ? "…" : active ? "PARAR" : "GRAVAR"}

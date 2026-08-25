@@ -6,12 +6,16 @@
     <title>Eko Nami</title>
     <script>
       try {
+        if (new URLSearchParams(location.search).get("window") === "hud") {
+          document.documentElement.classList.add("hud-window");
+        }
         var t = localStorage.getItem("eko-nami-appearance");
         if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
       } catch (e) {}
     </script>
     <style>
       html, body { background: #131211; margin: 0; }
+      html.hud-window, html.hud-window body { background: transparent !important; }
       html[data-theme="light"], html[data-theme="light"] body { background: #ede8e0; }
     </style>
   </head>

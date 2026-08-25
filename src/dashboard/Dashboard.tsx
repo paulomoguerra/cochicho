@@ -12,9 +12,11 @@ import {
   dictionaryList,
   historyList,
   historyTotals,
+  hotkeyStatus,
   onDictationState,
   onDictionaryChanged,
   onHistoryChanged,
+  onHotkeyAvailable,
   onHotkeyUnavailable,
   onSettingsChanged,
   onTranscript,
@@ -89,6 +91,9 @@ export default function Dashboard() {
     platformInfo()
       .then(setPlatform)
       .catch(() => {});
+    hotkeyStatus()
+      .then(setHotkeyWarning)
+      .catch(() => {});
     refreshDictionary();
     refreshHistory();
 
@@ -99,6 +104,7 @@ export default function Dashboard() {
       }),
       onTranscript((p) => setTranscript(p.text)),
       onHotkeyUnavailable(setHotkeyWarning),
+      onHotkeyAvailable(() => setHotkeyWarning(null)),
       onSettingsChanged(setSettings),
       onDictionaryChanged(refreshDictionary),
       onHistoryChanged(refreshHistory),
@@ -146,12 +152,13 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="dash">
-      <header className="dash-header">
-        <div>
-          <div className="dash-brand">E K O   N A M I</div>
-          <div className="dash-tagline">VOICE → TEXT · 100% LOCAL</div>
+    <div className="dash" data-tauri-drag-region>
+      <header className="dash-header" data-tauri-drag-region>
+        <div className="dash-brand-block" data-tauri-drag-region>
+          <div className="dash-brand" data-tauri-drag-region>E K O   N A M I</div>
+          <div className="dash-tagline" data-tauri-drag-region>VOICE → TEXT · 100% LOCAL</div>
         </div>
+        <div className="dash-drag-zone" data-tauri-drag-region aria-hidden="true" />
         <div className="dash-header-right">
           <SegmentPicker<Appearance>
             options={[

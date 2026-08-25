@@ -97,9 +97,9 @@ impl HudSize {
     /// Tamanhos do painel — portados de `HUD.swift` (panelSize).
     pub fn panel_size(&self) -> (f64, f64) {
         match self {
-            HudSize::Minimal => (160.0, 40.0),
-            HudSize::Medium => (380.0, 84.0),
-            HudSize::Large => (480.0, 176.0),
+            HudSize::Minimal => (220.0, 76.0),
+            HudSize::Medium => (380.0, 156.0),
+            HudSize::Large => (480.0, 210.0),
         }
     }
 }

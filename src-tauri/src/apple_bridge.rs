@@ -22,6 +22,16 @@ extern "C" {
     fn ekonami_asb_session_feed(session: i32, samples: *const c_float, count: i32) -> i32;
     fn ekonami_asb_session_finish(session: i32) -> i32;
     fn ekonami_asb_session_cancel(session: i32) -> i32;
+    fn ekonami_asb_warm_load(locale: *const c_char) -> i32;
+    fn ekonami_asb_warm_unload() -> i32;
+    fn ekonami_asb_menubar_icon_png(active: i32, length: *mut usize) -> *const u8;
+    fn ekonami_asb_hotkey_capture(
+        key_code: *mut i64,
+        modifier_flag: *mut u64,
+        display_name: *mut c_char,
+        display_capacity: i32,
+    ) -> i32;
+    fn ekonami_asb_hotkey_capture_cancel();
 }
 
 pub fn speech_available() -> bool {
@@ -87,6 +97,56 @@ pub fn session_cancel(session: i32) {
     }
 }
 
+pub fn warm_load(locale: &str) -> Result<(), String> {
+    let locale = CString::new(locale).map_err(|e| e.to_string())?;
+    let rc = unsafe { ekonami_asb_warm_load(locale.as_ptr()) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(format!("apple speech warm load failed ({rc})"))
+    }
+}
+
+pub fn warm_unload() {
+    unsafe {
+        let _ = ekonami_asb_warm_unload();
+    }
+}
+
+pub fn menubar_icon_png(active: bool) -> Option<Vec<u8>> {
+    let mut length = 0usize;
+    let ptr = unsafe { ekonami_asb_menubar_icon_png(active as i32, &mut length) };
+    if ptr.is_null() || length == 0 {
+        return None;
+    }
+    Some(unsafe { std::slice::from_raw_parts(ptr, length) }.to_vec())
+}
+
+pub fn capture_hotkey() -> Result<(i64, u64, String), String> {
+    let mut key_code = -1i64;
+    let mut modifier_flag = 0u64;
+    let mut display_name = [0 as c_char; 64];
+    let rc = unsafe {
+        ekonami_asb_hotkey_capture(
+            &mut key_code,
+            &mut modifier_flag,
+            display_name.as_mut_ptr(),
+            display_name.len() as i32,
+        )
+    };
+    if rc != 0 {
+        return Err("captura cancelada".into());
+    }
+    let display = unsafe { CStr::from_ptr(display_name.as_ptr()) }
+        .to_string_lossy()
+        .into_owned();
+    Ok((key_code, modifier_flag, display))
+}
+
+pub fn cancel_hotkey_capture() {
+    unsafe { ekonami_asb_hotkey_capture_cancel() }
+}
+
 /// Copia o CStr do callback (válido só durante a chamada).
 pub unsafe fn text_from_callback(ptr: *const c_char) -> String {
     if ptr.is_null() {
@@ -102,7 +162,7 @@ mod tests {
     #[test]
     fn bridge_links_and_answers() {
         let version = bridge_version();
-        assert_eq!(version, 2, "unexpected bridge ABI version");
+        assert_eq!(version, 4, "unexpected bridge ABI version");
         let available = speech_available();
         assert!(available || !available, "call must return without trapping");
         let _ = mic_status(); // 0..3 ou unknown — não pode trapear

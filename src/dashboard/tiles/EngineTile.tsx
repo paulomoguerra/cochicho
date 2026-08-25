@@ -2,10 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import {
   type EngineKind,
   type ModelStatus,
+  type ModelResidenceStatus,
   type Settings,
   modelCatalog,
   modelDelete,
   modelDownload,
+  modelLoadSelected,
+  modelResidence,
+  modelUnload,
+  onDictationState,
   onModelProgress,
   settingsUpdate,
 } from "../../lib/ipc";
@@ -41,12 +46,18 @@ export function EngineTile({
   const [busyName, setBusyName] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [failed, setFailed] = useState<string | null>(null);
+  const [residence, setResidence] = useState<ModelResidenceStatus | null>(null);
+  const [residenceBusy, setResidenceBusy] = useState(false);
+  const [residenceError, setResidenceError] = useState<string | null>(null);
   const roomy = isRoomy(size);
   const engine = effectiveEngine(settings, isMac);
 
   const refresh = () => {
     modelCatalog()
       .then(setCatalog)
+      .catch(() => {});
+    modelResidence()
+      .then(setResidence)
       .catch(() => {});
   };
 
@@ -55,10 +66,16 @@ export function EngineTile({
     const unsub = onModelProgress((p) => {
       if (busyName && p.name === busyName) setProgress(p.progress);
     });
+    const stateUnsub = onDictationState((p) => {
+      if (p.state === "idle" || p.state === "failed") {
+        modelResidence().then(setResidence).catch(() => {});
+      }
+    });
     return () => {
       unsub.then((fn) => fn());
+      stateUnsub.then((fn) => fn());
     };
-  }, [busyName]);
+  }, [busyName, engine, settings.parakeet_model, settings.whisper_model]);
 
   const engineOptions = useMemo(() => {
     const opts: { value: EngineKind; label: string }[] = [];
@@ -70,6 +87,7 @@ export function EngineTile({
 
   const setEngine = (next: EngineKind) => {
     setShowingDownloads(false);
+    setResidenceError(null);
     void settingsUpdate({ engine: next });
   };
 
@@ -99,8 +117,37 @@ export function EngineTile({
     }
   };
 
+  const toggleResidence = async () => {
+    if (residenceBusy) return;
+    setResidenceBusy(true);
+    setResidenceError(null);
+    try {
+      const selectedModel =
+        engine === "apple"
+          ? settings.language
+          : engine === "whisper"
+            ? settings.whisper_model
+            : settings.parakeet_model;
+      const isLoaded =
+        residence?.loaded_engine === engine && residence.loaded_model === selectedModel;
+      setResidence(isLoaded ? await modelUnload() : await modelLoadSelected());
+    } catch (e) {
+      setResidenceError(String(e));
+    } finally {
+      setResidenceBusy(false);
+    }
+  };
+
   const whisperModels = catalog.filter((m) => m.engine === "whisper");
   const parakeetModels = catalog.filter((m) => m.engine === "parakeet");
+  const selectedModel =
+    engine === "apple"
+      ? settings.language
+      : engine === "whisper"
+        ? settings.whisper_model
+        : settings.parakeet_model;
+  const selectedLoaded =
+    residence?.loaded_engine === engine && residence.loaded_model === selectedModel;
 
   return (
     <Card>
@@ -169,6 +216,23 @@ export function EngineTile({
             )}
           </>
         )}
+
+        {!showingDownloads && (
+          <ResidenceFooter
+            downloaded={
+              engine === "apple"
+                ? true
+                : engine === "whisper"
+                ? whisperModels.some((model) => model.name === settings.whisper_model && model.downloaded)
+                : parakeetModels.some((model) => model.name === settings.parakeet_model && model.downloaded)
+            }
+            unloadedLabel={engine === "apple" ? "MODELO DO SISTEMA" : "BAIXADO · NO DISCO"}
+            loaded={selectedLoaded}
+            busy={residenceBusy}
+            error={residenceError}
+            onToggle={() => void toggleResidence()}
+          />
+        )}
       </div>
     </Card>
   );
@@ -200,7 +264,6 @@ function AppleSection({
       )}
       <div style={{ flex: 1 }} />
       {roomy && <PerfPlaceholder />}
-      <StatusLine text={size === "small" ? "MODELO DO SISTEMA · NEURAL ENGINE" : "MODELO DO SISTEMA"} />
     </>
   );
 }
@@ -254,15 +317,6 @@ function ParakeetSection({
       />
       {busyName && <DownloadBar fraction={progress} />}
       {selected && <ModelDetail model={selected} />}
-      <StatusLine
-        text={
-          selected?.downloaded
-            ? `${modelTitle(selected)} · ${formatBytes(selected.bytes_on_disk || selected.approx_bytes)}`
-            : selected
-              ? `${modelTitle(selected)} · BAIXAR`
-              : "PARAKEET"
-        }
-      />
     </>
   );
 }
@@ -324,8 +378,44 @@ function WhisperSection({
       />
       {busyName && <DownloadBar fraction={progress} />}
       {selected && <ModelDetail model={selected} />}
-      <StatusLine text={selected ? modelTitle(selected) : settings.whisper_model} />
     </>
+  );
+}
+
+function ResidenceFooter({
+  downloaded,
+  unloadedLabel,
+  loaded,
+  busy,
+  error,
+  onToggle,
+}: {
+  downloaded: boolean;
+  unloadedLabel: string;
+  loaded: boolean;
+  busy: boolean;
+  error: string | null;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="residence-wrap">
+      <div className="residence-footer">
+        <StatusLine
+          text={busy ? "CARREGANDO…" : loaded ? "CARREGADO · EM RAM" : downloaded ? unloadedLabel : "NÃO BAIXADO"}
+          dim={!loaded}
+        />
+        {downloaded && !busy && (
+          <button
+            type="button"
+            className={`residence-action${loaded ? " loaded" : ""}`}
+            onClick={onToggle}
+          >
+            {loaded ? "DESCARREGAR" : "CARREGAR"}
+          </button>
+        )}
+      </div>
+      {error && <span className="residence-error">{error}</span>}
+    </div>
   );
 }
 
@@ -411,7 +501,8 @@ function ModelCatalogList({
                     <span
                       role="button"
                       tabIndex={0}
-                      className="row-btn"
+                      className="row-btn model-delete"
+                      title={`Apagar ${modelTitle(m)} do disco`}
                       onClick={(e) => {
                         e.stopPropagation();
                         onDelete(m.name);

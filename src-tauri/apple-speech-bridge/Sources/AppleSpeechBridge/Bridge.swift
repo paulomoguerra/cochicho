@@ -1,11 +1,13 @@
+import AppKit
 import AVFoundation
+import Carbon.HIToolbox
 import CoreMedia
 import Foundation
 import Speech
 
 /// C ABI entre o core Rust e o Speech framework (Swift-only).
 ///
-/// ABI v2 — sessão streaming:
+/// ABI v4 — sessão streaming + warm hold + captura nativa de hotkey:
 ///   ekonami_asb_speech_available / ekonami_asb_bridge_version
 ///   ekonami_asb_mic_status / ekonami_asb_mic_request
 ///   ekonami_asb_session_start / feed / finish / cancel
@@ -42,7 +44,7 @@ public func ekonami_asb_speech_available() -> Int32 {
 
 @_cdecl("ekonami_asb_bridge_version")
 public func ekonami_asb_bridge_version() -> Int32 {
-    2
+    4
 }
 
 /// AVAuthorizationStatus raw: 0 notDetermined, 1 restricted, 2 denied, 3 authorized.
@@ -80,7 +82,7 @@ private final class SessionBox: @unchecked Sendable {
     var analyzer: SpeechAnalyzer?
     var inputContinuation: AsyncStream<AnalyzerInput>.Continuation?
     var resultsTask: Task<Void, Never>?
-    var finalizedText = ""
+    var finalizedSegments: [(range: CMTimeRange, text: String)] = []
     var nextBufferTime = CMTime.zero
     var analyzerFormat: AVAudioFormat?
     var converter: AVAudioConverter?
@@ -198,7 +200,7 @@ public func ekonami_asb_session_start(
                 try await analyzer.prepareToAnalyze(in: format)
             }
 
-            box.finalizedText = ""
+            box.finalizedSegments = []
             box.nextBufferTime = .zero
 
             box.resultsTask = Task {
@@ -210,10 +212,6 @@ public func ekonami_asb_session_start(
                             let kind = result.isFinal ? ChunkKind.finalChunk : ChunkKind.partial
                             box.emit(snapshot, kind: kind)
                         }
-                    }
-                    let final = box.finalizedText.trimmingCharacters(in: .whitespaces)
-                    if !final.isEmpty {
-                        box.emit(final, kind: ChunkKind.finalChunk)
                     }
                     box.emit("", kind: ChunkKind.ended)
                 } catch {
@@ -348,17 +346,309 @@ public func ekonami_asb_session_cancel(session: Int32) -> Int32 {
     return 0
 }
 
+// MARK: - Warm hold manual
+
+private actor WarmHold {
+    static let shared = WarmHold()
+
+    private var held: (localeID: String, analyzer: SpeechAnalyzer, transcriber: SpeechTranscriber)?
+
+    func load(localeID: String) async throws {
+        let requested = Locale(identifier: localeID)
+        let resolved = await SpeechTranscriber.supportedLocale(equivalentTo: requested)
+            ?? Locale(identifier: "en-US")
+        if let held,
+           Locale(identifier: held.localeID).identifier(.bcp47)
+            == resolved.identifier(.bcp47) {
+            return
+        }
+
+        await unload()
+        let transcriber = SpeechTranscriber(
+            locale: resolved,
+            transcriptionOptions: [],
+            reportingOptions: [.volatileResults, .fastResults],
+            attributeOptions: []
+        )
+        try await ensureModelInstalled(for: transcriber)
+        guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber])
+        else {
+            throw NSError(
+                domain: "AppleSpeechBridge",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "formato de áudio indisponível"]
+            )
+        }
+        let analyzer = SpeechAnalyzer(modules: [transcriber])
+        try await analyzer.prepareToAnalyze(in: format)
+        held = (resolved.identifier, analyzer, transcriber)
+    }
+
+    func unload() async {
+        if let held {
+            await held.analyzer.cancelAndFinishNow()
+        }
+        held = nil
+    }
+}
+
+@_cdecl("ekonami_asb_warm_load")
+public func ekonami_asb_warm_load(locale: UnsafePointer<CChar>?) -> Int32 {
+    guard SpeechTranscriber.isAvailable else { return -1 }
+    let localeID = locale.map { String(cString: $0) } ?? "en-US"
+    let sem = DispatchSemaphore(value: 0)
+    var result: Int32 = 0
+    Task {
+        do {
+            try await WarmHold.shared.load(localeID: localeID)
+        } catch {
+            result = -2
+        }
+        sem.signal()
+    }
+    sem.wait()
+    return result
+}
+
+@_cdecl("ekonami_asb_warm_unload")
+public func ekonami_asb_warm_unload() -> Int32 {
+    let sem = DispatchSemaphore(value: 0)
+    Task {
+        await WarmHold.shared.unload()
+        sem.signal()
+    }
+    sem.wait()
+    return 0
+}
+
+// MARK: - Original menu bar symbols
+
+private final class MenuBarIconStore: @unchecked Sendable {
+    static let shared = MenuBarIconStore()
+    let lock = NSLock()
+    var idle: Data?
+    var active: Data?
+}
+
+private func renderMenuBarSymbol(active: Bool) -> Data? {
+    let name = active ? "waveform.circle.fill" : "waveform"
+    guard let base = NSImage(systemSymbolName: name, accessibilityDescription: "Eko Nami") else {
+        return nil
+    }
+    let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+    let symbol = base.withSymbolConfiguration(configuration) ?? base
+    let canvas = NSImage(size: NSSize(width: 20, height: 20))
+    canvas.lockFocus()
+    NSColor.black.set()
+    let fitted = NSRect(x: 1, y: 1, width: 18, height: 18)
+    symbol.draw(in: fitted)
+    canvas.unlockFocus()
+    guard let tiff = canvas.tiffRepresentation,
+          let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
+    return bitmap.representation(using: .png, properties: [:])
+}
+
+@_cdecl("ekonami_asb_menubar_icon_png")
+public func ekonami_asb_menubar_icon_png(
+    active: Int32,
+    length: UnsafeMutablePointer<Int>?
+) -> UnsafePointer<UInt8>? {
+    let isActive = active != 0
+    let store = MenuBarIconStore.shared
+    store.lock.lock()
+    defer { store.lock.unlock() }
+
+    if isActive, store.active == nil {
+        store.active = renderMenuBarSymbol(active: true)
+    } else if !isActive, store.idle == nil {
+        store.idle = renderMenuBarSymbol(active: false)
+    }
+    guard let data = isActive ? store.active : store.idle else { return nil }
+    length?.pointee = data.count
+    return data.withUnsafeBytes { $0.bindMemory(to: UInt8.self).baseAddress }
+}
+
+// MARK: - Native one-shot hotkey capture
+
+private final class HotkeyCaptureSession: @unchecked Sendable {
+    let semaphore = DispatchSemaphore(value: 0)
+    var monitor: Any?
+    var keyCode: Int64 = -1
+    var modifierFlag: UInt64 = 0
+    var displayName = ""
+    var finished = false
+
+    func complete(keyCode: Int64, modifierFlag: UInt64, displayName: String) {
+        guard !finished else { return }
+        finished = true
+        self.keyCode = keyCode
+        self.modifierFlag = modifierFlag
+        self.displayName = displayName
+        removeMonitor()
+        semaphore.signal()
+    }
+
+    func cancel() {
+        guard !finished else { return }
+        finished = true
+        removeMonitor()
+        semaphore.signal()
+    }
+
+    private func removeMonitor() {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+    }
+}
+
+private final class HotkeyCaptureStore: @unchecked Sendable {
+    static let shared = HotkeyCaptureStore()
+    let lock = NSLock()
+    var current: HotkeyCaptureSession?
+}
+
+private func hotkeySpec(from event: NSEvent) -> (Int64, UInt64, String)? {
+    let code = Int64(event.keyCode)
+    if event.type == .flagsChanged {
+        switch code {
+        case Int64(kVK_Control): return (code, 0x01, "L⌃")
+        case Int64(kVK_Shift): return (code, 0x02, "L⇧")
+        case Int64(kVK_RightShift): return (code, 0x04, "R⇧")
+        case Int64(kVK_Command): return (code, 0x08, "L⌘")
+        case Int64(kVK_RightCommand): return (code, 0x10, "R⌘")
+        case Int64(kVK_Option): return (code, 0x20, "L⌥")
+        case Int64(kVK_RightOption): return (code, 0x40, "R⌥")
+        case Int64(kVK_RightControl): return (code, 0x2000, "R⌃")
+        case Int64(kVK_Function):
+            return (code, UInt64(CGEventFlags.maskSecondaryFn.rawValue), "FN")
+        default: return nil
+        }
+    }
+    guard event.type == .keyDown, !event.isARepeat else { return nil }
+    let names: [UInt16: String] = [
+        UInt16(kVK_Return): "RETURN", UInt16(kVK_Tab): "TAB",
+        UInt16(kVK_Space): "SPACE", UInt16(kVK_Delete): "DELETE",
+        UInt16(kVK_Escape): "ESC", UInt16(kVK_CapsLock): "CAPS",
+        UInt16(kVK_LeftArrow): "←", UInt16(kVK_RightArrow): "→",
+        UInt16(kVK_UpArrow): "↑", UInt16(kVK_DownArrow): "↓",
+        UInt16(kVK_F1): "F1", UInt16(kVK_F2): "F2", UInt16(kVK_F3): "F3",
+        UInt16(kVK_F4): "F4", UInt16(kVK_F5): "F5", UInt16(kVK_F6): "F6",
+        UInt16(kVK_F7): "F7", UInt16(kVK_F8): "F8", UInt16(kVK_F9): "F9",
+        UInt16(kVK_F10): "F10", UInt16(kVK_F11): "F11", UInt16(kVK_F12): "F12",
+        UInt16(kVK_F13): "F13", UInt16(kVK_F14): "F14", UInt16(kVK_F15): "F15",
+        UInt16(kVK_F16): "F16", UInt16(kVK_F17): "F17", UInt16(kVK_F18): "F18",
+        UInt16(kVK_F19): "F19", UInt16(kVK_F20): "F20"
+    ]
+    let name = names[event.keyCode]
+        ?? event.charactersIgnoringModifiers?.uppercased()
+        ?? "KEY \(event.keyCode)"
+    return (code, 0, name)
+}
+
+@_cdecl("ekonami_asb_hotkey_capture")
+public func ekonami_asb_hotkey_capture(
+    keyCode: UnsafeMutablePointer<Int64>?,
+    modifierFlag: UnsafeMutablePointer<UInt64>?,
+    displayName: UnsafeMutablePointer<CChar>?,
+    displayCapacity: Int32
+) -> Int32 {
+    let session = HotkeyCaptureSession()
+    let store = HotkeyCaptureStore.shared
+    store.lock.lock()
+    store.current?.cancel()
+    store.current = session
+    store.lock.unlock()
+
+    DispatchQueue.main.async {
+        guard !session.finished else { return }
+        session.monitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.keyDown, .flagsChanged]
+        ) { event in
+            guard let spec = hotkeySpec(from: event) else { return event }
+            session.complete(
+                keyCode: spec.0,
+                modifierFlag: spec.1,
+                displayName: spec.2
+            )
+            return nil
+        }
+    }
+
+    session.semaphore.wait()
+    store.lock.lock()
+    if store.current === session { store.current = nil }
+    store.lock.unlock()
+    guard session.keyCode >= 0 else { return 1 }
+    keyCode?.pointee = session.keyCode
+    modifierFlag?.pointee = session.modifierFlag
+    if let displayName, displayCapacity > 0 {
+        let bytes = Array(session.displayName.utf8.prefix(Int(displayCapacity) - 1))
+        for (index, byte) in bytes.enumerated() {
+            displayName[index] = CChar(bitPattern: byte)
+        }
+        displayName[bytes.count] = 0
+    }
+    return 0
+}
+
+@_cdecl("ekonami_asb_hotkey_capture_cancel")
+public func ekonami_asb_hotkey_capture_cancel() {
+    let store = HotkeyCaptureStore.shared
+    store.lock.lock()
+    let session = store.current
+    store.lock.unlock()
+    if Thread.isMainThread {
+        session?.cancel()
+    } else {
+        DispatchQueue.main.sync { session?.cancel() }
+    }
+}
+
 // MARK: - Helpers (espelho do AppleSpeechEngine.swift)
 
 private func absorb(_ result: SpeechTranscriber.Result, into box: SessionBox) -> String {
     let text = String(result.text.characters)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return "" }
     box.lock.lock()
     defer { box.lock.unlock() }
+
     if result.isFinal {
-        box.finalizedText += text
-        return box.finalizedText.trimmingCharacters(in: .whitespaces)
+        box.finalizedSegments.removeAll { rangesOverlap($0.range, result.range) }
+        box.finalizedSegments.append((result.range, text))
     }
-    return (box.finalizedText + text).trimmingCharacters(in: .whitespaces)
+
+    var snapshot = box.finalizedSegments
+    if !result.isFinal {
+        snapshot.removeAll { rangesOverlap($0.range, result.range) }
+        snapshot.append((result.range, text))
+    }
+    snapshot.sort { CMTimeCompare($0.range.start, $1.range.start) < 0 }
+    return joinTranscript(snapshot.map(\.text))
+}
+
+private func rangesOverlap(_ lhs: CMTimeRange, _ rhs: CMTimeRange) -> Bool {
+    if CMTimeCompare(lhs.start, rhs.start) == 0 { return true }
+    return CMTimeCompare(lhs.start, CMTimeRangeGetEnd(rhs)) < 0
+        && CMTimeCompare(rhs.start, CMTimeRangeGetEnd(lhs)) < 0
+}
+
+private func joinTranscript(_ pieces: [String]) -> String {
+    pieces.reduce(into: "") { result, raw in
+        let piece = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !piece.isEmpty else { return }
+        guard !result.isEmpty else {
+            result = piece
+            return
+        }
+        let punctuation = CharacterSet(charactersIn: ".,!?;:")
+        let startsWithPunctuation = piece.unicodeScalars.first
+            .map { punctuation.contains($0) } ?? false
+        if !result.hasSuffix(" ") && !startsWithPunctuation { result.append(" ") }
+        result.append(piece)
+    }
 }
 
 private func ensureModelInstalled(for transcriber: SpeechTranscriber) async throws {

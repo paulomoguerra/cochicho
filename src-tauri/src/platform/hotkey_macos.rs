@@ -261,3 +261,99 @@ extern "C" {
 }
 
 use core_foundation::base::TCFType;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn test_state(spec: HotkeySpec) -> (TapState, Arc<AtomicUsize>, Arc<AtomicUsize>) {
+        let presses = Arc::new(AtomicUsize::new(0));
+        let releases = Arc::new(AtomicUsize::new(0));
+        let press_count = presses.clone();
+        let release_count = releases.clone();
+        (
+            TapState {
+                spec,
+                is_pressed: false,
+                on_press: Arc::new(move || {
+                    press_count.fetch_add(1, Ordering::SeqCst);
+                }),
+                on_release: Arc::new(move || {
+                    release_count.fetch_add(1, Ordering::SeqCst);
+                }),
+                mach_port_ref: 0,
+            },
+            presses,
+            releases,
+        )
+    }
+
+    #[test]
+    fn right_option_fires_once_for_press_and_release() {
+        let (mut state, presses, releases) = test_state(HotkeySpec {
+            key_code: 61,
+            modifier_flag: 0x40,
+            display_name: "R⌥".into(),
+        });
+        // Os bits NX_DEVICE* não fazem parte das flags públicas, mas chegam crus do CGEvent.
+        let pressed_flags = CGEventFlags::from_bits_retain(0x40);
+
+        assert!(handle_event(
+            &mut state,
+            CGEventType::FlagsChanged,
+            61,
+            false,
+            pressed_flags,
+        ));
+        assert!(!handle_event(
+            &mut state,
+            CGEventType::FlagsChanged,
+            61,
+            false,
+            pressed_flags,
+        ));
+        assert!(handle_event(
+            &mut state,
+            CGEventType::FlagsChanged,
+            61,
+            false,
+            CGEventFlags::empty(),
+        ));
+        assert_eq!(presses.load(Ordering::SeqCst), 1);
+        assert_eq!(releases.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn regular_key_ignores_repeat_and_tracks_key_up() {
+        let (mut state, presses, releases) = test_state(HotkeySpec {
+            key_code: 109,
+            modifier_flag: 0,
+            display_name: "F10".into(),
+        });
+
+        assert!(handle_event(
+            &mut state,
+            CGEventType::KeyDown,
+            109,
+            false,
+            CGEventFlags::empty(),
+        ));
+        assert!(handle_event(
+            &mut state,
+            CGEventType::KeyDown,
+            109,
+            true,
+            CGEventFlags::empty(),
+        ));
+        assert!(handle_event(
+            &mut state,
+            CGEventType::KeyUp,
+            109,
+            false,
+            CGEventFlags::empty(),
+        ));
+        assert_eq!(presses.load(Ordering::SeqCst), 1);
+        assert_eq!(releases.load(Ordering::SeqCst), 1);
+    }
+}

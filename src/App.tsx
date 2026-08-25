@@ -6,6 +6,7 @@ import { onSettingsChanged, onboardingNeeded, settingsGet } from "./lib/ipc";
 import { applyAppearance, readStoredAppearance } from "./lib/theme";
 
 const isHud = new URLSearchParams(window.location.search).get("window") === "hud";
+if (isHud) document.documentElement.classList.add("hud-window");
 
 export default function App() {
   return (

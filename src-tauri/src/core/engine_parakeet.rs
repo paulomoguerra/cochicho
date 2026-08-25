@@ -8,7 +8,9 @@ use std::sync::{Arc, Mutex};
 
 use sherpa_rs::transducer::{TransducerConfig, TransducerRecognizer};
 
-use crate::core::engine::{ChunkTx, EngineAvailability, EngineError, TranscriptChunk, TranscriptionEngine};
+use crate::core::engine::{
+    ChunkTx, EngineAvailability, EngineError, TranscriptChunk, TranscriptionEngine,
+};
 use crate::core::models::{self, ParakeetOnnxPaths};
 
 /// Hard backstop igual ao Swift: 10 min @ 16 kHz ≈ 38 MB.
@@ -72,7 +74,34 @@ fn ensure_recognizer(model_name: &str, paths: &ParakeetOnnxPaths) -> Result<(), 
     Ok(())
 }
 
-fn transcribe(model_name: &str, paths: &ParakeetOnnxPaths, samples: &[f32]) -> Result<String, EngineError> {
+pub fn load_model(model_name: &str) -> Result<(), EngineError> {
+    let info = models::resolve_parakeet_model(model_name).ok_or(EngineError::Unavailable)?;
+    if !models::is_downloaded(info) {
+        return Err(EngineError::ModelNotDownloaded);
+    }
+    let paths = models::parakeet_onnx_paths(&models::model_path(info))
+        .ok_or_else(|| EngineError::Failed("modelo Parakeet incompleto em disco".into()))?;
+    ensure_recognizer(model_name, &paths)
+}
+
+pub fn unload_model() {
+    if let Ok(mut slot) = RECOGNIZER.lock() {
+        *slot = None;
+    }
+}
+
+pub fn loaded_model() -> Option<String> {
+    RECOGNIZER
+        .lock()
+        .ok()
+        .and_then(|slot| slot.as_ref().map(|(name, _)| name.clone()))
+}
+
+fn transcribe(
+    model_name: &str,
+    paths: &ParakeetOnnxPaths,
+    samples: &[f32],
+) -> Result<String, EngineError> {
     ensure_recognizer(model_name, paths)?;
     let mut slot = RECOGNIZER.lock().unwrap();
     let recognizer = slot
@@ -172,9 +201,15 @@ mod tests {
     }
 
     #[test]
-    fn new_engine_needs_download_without_files() {
+    fn new_engine_availability_matches_disk_state() {
         let engine = ParakeetEngine::new("parakeet-tdt-0.6b-v3");
-        assert_eq!(engine.availability(), EngineAvailability::NeedsDownload);
+        let info = models::resolve_parakeet_model("parakeet-tdt-0.6b-v3").unwrap();
+        let expected = if models::is_downloaded(info) {
+            EngineAvailability::Available
+        } else {
+            EngineAvailability::NeedsDownload
+        };
+        assert_eq!(engine.availability(), expected);
     }
 
     #[test]

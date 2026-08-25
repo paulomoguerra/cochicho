@@ -13,6 +13,41 @@ use crate::core::engine::{
 };
 use crate::core::settings::Language;
 
+static APPLE_RESIDENCE: Mutex<Option<String>> = Mutex::new(None);
+
+fn locale_for(language: Language) -> &'static str {
+    match language {
+        Language::PtBR => "pt-BR",
+        Language::EnUS => "en-US",
+    }
+}
+
+pub fn load_model(language: Language) -> Result<(), EngineError> {
+    if !apple_bridge::speech_available() {
+        return Err(EngineError::Unavailable);
+    }
+    if apple_bridge::bridge_version() < 3 {
+        return Err(EngineError::Failed("apple-speech-bridge ABI < 3".into()));
+    }
+    let locale = locale_for(language);
+    apple_bridge::warm_load(locale).map_err(EngineError::Failed)?;
+    if let Ok(mut loaded) = APPLE_RESIDENCE.lock() {
+        *loaded = Some(locale.into());
+    }
+    Ok(())
+}
+
+pub fn unload_model() {
+    apple_bridge::warm_unload();
+    if let Ok(mut loaded) = APPLE_RESIDENCE.lock() {
+        *loaded = None;
+    }
+}
+
+pub fn loaded_model() -> Option<String> {
+    APPLE_RESIDENCE.lock().ok().and_then(|loaded| loaded.clone())
+}
+
 struct CallbackState {
     tx: ChunkTx,
     last_error: Option<String>,
@@ -27,10 +62,7 @@ pub struct AppleEngine {
 
 impl AppleEngine {
     pub fn new(language: Language) -> Self {
-        let locale = match language {
-            Language::PtBR => "pt-BR",
-            Language::EnUS => "en-US",
-        };
+        let locale = locale_for(language);
         Self {
             locale: locale.into(),
             session: None,

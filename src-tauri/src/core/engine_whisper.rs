@@ -7,9 +7,57 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::core::engine::{ChunkTx, EngineAvailability, EngineError, TranscriptChunk, TranscriptionEngine};
+use crate::core::engine::{
+    ChunkTx, EngineAvailability, EngineError, TranscriptChunk, TranscriptionEngine,
+};
 use crate::core::models;
 use crate::core::settings::Language;
+
+/// Contexto compartilhado para o modelo ficar realmente residente entre gravações.
+static WHISPER_CONTEXT: Mutex<Option<(String, Arc<whisper_rs::WhisperContext>)>> = Mutex::new(None);
+
+fn context_for_model(model_name: &str) -> Result<Arc<whisper_rs::WhisperContext>, EngineError> {
+    let mut slot = WHISPER_CONTEXT
+        .lock()
+        .map_err(|_| EngineError::Failed("estado do Whisper corrompido".into()))?;
+    if let Some((loaded_name, context)) = slot.as_ref() {
+        if loaded_name == model_name {
+            return Ok(context.clone());
+        }
+    }
+
+    let info = models::resolve_whisper_model(model_name).ok_or(EngineError::Unavailable)?;
+    let path = models::model_path(info);
+    if !models::is_downloaded(info) {
+        return Err(EngineError::ModelNotDownloaded);
+    }
+    let context = Arc::new(
+        whisper_rs::WhisperContext::new_with_params(
+            path.to_string_lossy().as_ref(),
+            whisper_rs::WhisperContextParameters::default(),
+        )
+        .map_err(|e| EngineError::Failed(format!("load whisper model: {e}")))?,
+    );
+    *slot = Some((model_name.to_string(), context.clone()));
+    Ok(context)
+}
+
+pub fn load_model(model_name: &str) -> Result<(), EngineError> {
+    context_for_model(model_name).map(|_| ())
+}
+
+pub fn unload_model() {
+    if let Ok(mut slot) = WHISPER_CONTEXT.lock() {
+        *slot = None;
+    }
+}
+
+pub fn loaded_model() -> Option<String> {
+    WHISPER_CONTEXT
+        .lock()
+        .ok()
+        .and_then(|slot| slot.as_ref().map(|(name, _)| name.clone()))
+}
 
 pub struct WhisperEngine {
     model_name: String,
@@ -40,18 +88,7 @@ impl WhisperEngine {
         if self.context.is_some() {
             return Ok(());
         }
-        let info = self.model_info()?;
-        let path = models::model_path(info);
-        if !models::is_downloaded(info) {
-            return Err(EngineError::ModelNotDownloaded);
-        }
-        let path_str = path.to_string_lossy().to_string();
-        let ctx = whisper_rs::WhisperContext::new_with_params(
-            &path_str,
-            whisper_rs::WhisperContextParameters::default(),
-        )
-        .map_err(|e| EngineError::Failed(format!("load whisper model: {e}")))?;
-        self.context = Some(Arc::new(ctx));
+        self.context = Some(context_for_model(&self.model_name)?);
         Ok(())
     }
 }
@@ -59,19 +96,13 @@ impl WhisperEngine {
 #[async_trait::async_trait]
 impl TranscriptionEngine for WhisperEngine {
     async fn start(&mut self, prompt: &str, tx: ChunkTx) -> Result<(), EngineError> {
-        let mut engine = Self {
-            model_name: self.model_name.clone(),
-            language: self.language,
-            context: None,
-            buffer: self.buffer.clone(),
-            tx: None,
-            prompt: String::new(),
-        };
+        let model_name = self.model_name.clone();
         // Carregar o modelo é bloqueante e pesado — fora da thread async.
-        tokio::task::spawn_blocking(move || engine.ensure_context())
+        let context = tokio::task::spawn_blocking(move || context_for_model(&model_name))
             .await
             .map_err(|e| EngineError::Failed(e.to_string()))??;
 
+        self.context = Some(context);
         self.buffer.lock().unwrap().clear();
         self.tx = Some(tx);
         self.prompt = prompt.to_string();
@@ -124,7 +155,10 @@ impl TranscriptionEngine for WhisperEngine {
         .map_err(|e| EngineError::Failed(e.to_string()))??;
 
         if let Some(tx) = &self.tx {
-            let _ = tx.send(TranscriptChunk { text, is_final: true });
+            let _ = tx.send(TranscriptChunk {
+                text,
+                is_final: true,
+            });
         }
         Ok(())
     }

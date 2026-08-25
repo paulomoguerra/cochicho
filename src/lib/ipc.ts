@@ -75,6 +75,7 @@ export interface SettingsPatch {
 export interface StatePayload {
   state: DictationState;
   error: string | null;
+  transcript: string;
 }
 
 export interface TranscriptPayload {
@@ -104,6 +105,19 @@ export interface ModelStatus {
 export interface DownloadProgress {
   name: string;
   progress: number;
+}
+
+export interface ModelResidenceStatus {
+  supported: boolean;
+  loaded_engine: EngineKind | null;
+  loaded_model: string | null;
+}
+
+export type MicrophonePermission = "authorized" | "denied" | "notdetermined" | "restricted" | "unknown";
+
+export interface PermissionsStatus {
+  accessibility: boolean;
+  microphone: MicrophonePermission;
 }
 
 export type EntryKind = "term" | "correction";
@@ -146,12 +160,26 @@ export const dictationToggle = () => invoke("dictation_toggle");
 export const dictationState = () => invoke<StatePayload>("dictation_state");
 export const platformInfo = () => invoke<string>("platform_info");
 export const onboardingNeeded = () => invoke<boolean>("onboarding_needed");
+export const permissionsStatus = () => invoke<PermissionsStatus>("permissions_status");
+export const permissionsPromptAccessibility = () =>
+  invoke<boolean>("permissions_prompt_accessibility");
+export const permissionsRequestMicrophone = () =>
+  invoke<boolean>("permissions_request_microphone");
+export const permissionsOpenSettings = (kind: "microphone" | "accessibility") =>
+  invoke<boolean>("permissions_open_settings", { kind });
 
 export const settingsGet = () => invoke<Settings>("settings_get");
+export const hotkeyStatus = () => invoke<string | null>("hotkey_status");
+export const hotkeyCaptureBegin = () => invoke<HotkeySpec>("hotkey_capture_begin");
+export const hotkeyCaptureCancel = () => invoke("hotkey_capture_cancel");
 export const settingsUpdate = (patch: SettingsPatch) =>
   invoke<Settings>("settings_update", { patch });
 
 export const modelCatalog = () => invoke<ModelStatus[]>("model_catalog");
+export const modelResidence = () => invoke<ModelResidenceStatus>("model_residence");
+export const modelLoadSelected = () =>
+  invoke<ModelResidenceStatus>("model_load_selected");
+export const modelUnload = () => invoke<ModelResidenceStatus>("model_unload");
 export const modelDownload = (engine: EngineKind, name: string) =>
   invoke("model_download", { engine, name });
 export const modelDelete = (engine: EngineKind, name: string) =>
@@ -181,6 +209,9 @@ export const onAudioLevel = (cb: (level: number) => void): ListenPromise =>
 
 export const onHotkeyUnavailable = (cb: (msg: string) => void): ListenPromise =>
   listen<string>("hotkey:unavailable", (e) => cb(e.payload));
+
+export const onHotkeyAvailable = (cb: () => void): ListenPromise =>
+  listen("hotkey:available", cb);
 
 export const onModelProgress = (cb: (p: DownloadProgress) => void): ListenPromise =>
   listen<DownloadProgress>("model:progress", (e) => cb(e.payload));

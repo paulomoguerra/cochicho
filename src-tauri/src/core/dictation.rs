@@ -34,6 +34,7 @@ pub enum Phase {
 pub struct StatePayload {
     pub state: &'static str,
     pub error: Option<String>,
+    pub transcript: String,
 }
 
 impl StatePayload {
@@ -45,7 +46,11 @@ impl StatePayload {
             Phase::Finishing => "finishing",
             Phase::Failed => "failed",
         };
-        Self { state, error }
+        Self {
+            state,
+            error,
+            transcript: String::new(),
+        }
     }
 }
 
@@ -112,12 +117,17 @@ impl DictationController {
         self.inner.lock().await.phase
     }
 
+    pub async fn snapshot(&self) -> (Phase, Option<String>, String) {
+        let guard = self.inner.lock().await;
+        (guard.phase, guard.error.clone(), guard.transcript.clone())
+    }
+
     // MARK: - Entradas externas
 
     pub fn hotkey_pressed(&self) {
         let inner = self.inner.clone();
         let deps = self.deps.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             let (phase, mode) = {
                 let guard = inner.lock().await;
                 (guard.phase, deps.settings.get().hotkey_mode)
@@ -137,7 +147,7 @@ impl DictationController {
     pub fn hotkey_released(&self) {
         let inner = self.inner.clone();
         let deps = self.deps.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             let (phase, mode) = {
                 let guard = inner.lock().await;
                 (guard.phase, deps.settings.get().hotkey_mode)
@@ -152,7 +162,7 @@ impl DictationController {
     pub fn toggle_from_ui(&self) {
         let inner = self.inner.clone();
         let deps = self.deps.clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             let phase = inner.lock().await.phase;
             match phase {
                 Phase::Idle => Self::begin_with(inner, deps).await,
@@ -174,14 +184,17 @@ impl DictationController {
         };
 
         let mut engine: Box<dyn TranscriptionEngine> = match kind {
-            EngineKind::Whisper => {
-                Box::new(WhisperEngine::new(&settings.whisper_model, settings.language))
-            }
+            EngineKind::Whisper => Box::new(WhisperEngine::new(
+                &settings.whisper_model,
+                settings.language,
+            )),
             EngineKind::Parakeet => Box::new(ParakeetEngine::new(&settings.parakeet_model)),
             EngineKind::Apple => {
                 #[cfg(target_os = "macos")]
                 {
-                    Box::new(crate::core::engine_apple::AppleEngine::new(settings.language))
+                    Box::new(crate::core::engine_apple::AppleEngine::new(
+                        settings.language,
+                    ))
                 }
                 #[cfg(not(target_os = "macos"))]
                 {
@@ -218,6 +231,7 @@ impl DictationController {
             Self::fail_with(inner, deps, e.to_string()).await;
             return;
         }
+        Self::emit_transcript(&deps, "", false);
 
         // Consumidor de chunks da engine (live ou final).
         let chunk_inner = inner.clone();
@@ -225,14 +239,7 @@ impl DictationController {
         let chunk_task = tokio::spawn(async move {
             while let Some(chunk) = rx.recv().await {
                 let mut guard = chunk_inner.lock().await;
-                if chunk.is_final {
-                    guard.transcript = chunk.text;
-                } else {
-                    if !guard.transcript.is_empty() {
-                        guard.transcript.push(' ');
-                    }
-                    guard.transcript.push_str(&chunk.text);
-                }
+                apply_transcript_snapshot(&mut guard.transcript, &chunk);
                 let text = guard.transcript.clone();
                 drop(guard);
                 Self::emit_transcript(&chunk_deps, &text, chunk.is_final);
@@ -280,11 +287,10 @@ impl DictationController {
         }
 
         Self::emit_state(&deps, Phase::Listening, None).await;
-        Self::emit_transcript(&deps, "", false);
     }
 
     async fn end_with(inner: Arc<Mutex<Inner>>, deps: Deps) {
-        let (mut engine, duration) = {
+        let (feed_task, duration) = {
             let mut guard = inner.lock().await;
             if guard.phase != Phase::Listening && guard.phase != Phase::Starting {
                 return;
@@ -298,10 +304,20 @@ impl DictationController {
                 .started_at
                 .map(|t| t.elapsed().as_secs_f64())
                 .unwrap_or(0.0);
-            let engine = guard.engine.take();
-            (engine, duration)
+            (guard.feed_task.take(), duration)
         };
         Self::emit_state(&deps, Phase::Finishing, None).await;
+
+        // `capture.stop()` derruba o último audio_tx. Aguarde a fila já capturada
+        // chegar à engine antes de removê-la do Inner.
+        if let Some(task) = feed_task {
+            let _ = task.await;
+        }
+
+        let (mut engine, chunk_task) = {
+            let mut guard = inner.lock().await;
+            (guard.engine.take(), guard.chunk_task.take())
+        };
 
         if let Some(engine) = engine.as_mut() {
             if let Err(e) = engine.finish().await {
@@ -309,9 +325,11 @@ impl DictationController {
                 return;
             }
         }
-
-        // O chunk final pode estar na fila do consumer — dá um tick para ele processar.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        // Whisper/Parakeet mantêm o sender no engine; drop fecha o canal.
+        drop(engine);
+        if let Some(task) = chunk_task {
+            let _ = task.await;
+        }
 
         let transcript = {
             let guard = inner.lock().await;
@@ -461,6 +479,10 @@ impl DictationController {
         let _ = deps
             .app
             .emit("dictation:state", StatePayload::for_phase(phase, error));
+        crate::sync_tray_recording(
+            &deps.app,
+            matches!(phase, Phase::Starting | Phase::Listening | Phase::Finishing),
+        );
     }
 
     fn emit_transcript(deps: &Deps, text: &str, is_final: bool) {
@@ -469,10 +491,9 @@ impl DictationController {
             text: &'a str,
             is_final: bool,
         }
-        let _ = deps.app.emit(
-            "dictation:transcript",
-            TranscriptPayload { text, is_final },
-        );
+        let _ = deps
+            .app
+            .emit("dictation:transcript", TranscriptPayload { text, is_final });
     }
 
     fn show_hud(deps: &Deps) {
@@ -483,5 +504,35 @@ impl DictationController {
             #[cfg(target_os = "linux")]
             let _ = hud.set_ignore_cursor_events(true);
         }
+    }
+}
+
+fn apply_transcript_snapshot(target: &mut String, chunk: &TranscriptChunk) {
+    target.clear();
+    target.push_str(&chunk.text);
+}
+
+#[cfg(test)]
+mod transcript_tests {
+    use super::*;
+
+    #[test]
+    fn cumulative_partial_snapshots_replace_instead_of_duplicate() {
+        let mut transcript = String::new();
+        for (text, is_final) in [
+            ("teste", false),
+            ("teste de", false),
+            ("teste de áudio", false),
+            ("teste de áudio.", true),
+        ] {
+            apply_transcript_snapshot(
+                &mut transcript,
+                &TranscriptChunk {
+                    text: text.into(),
+                    is_final,
+                },
+            );
+        }
+        assert_eq!(transcript, "teste de áudio.");
     }
 }
