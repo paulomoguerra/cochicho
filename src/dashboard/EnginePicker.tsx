@@ -9,7 +9,7 @@ import {
 } from "../lib/ipc";
 import { PillButton } from "./ui";
 
-/** First-run Linux: escolhe Parakeet ou Whisper, baixa, grava settings. */
+/** First-run Linux: Whisper only (Parakeet ainda é stub — volta quando sherpa-onnx linkar). */
 export default function EnginePicker({ onDone }: { onDone: () => void }) {
   const [catalog, setCatalog] = useState<ModelStatus[]>([]);
   const [busyName, setBusyName] = useState<string | null>(null);
@@ -20,10 +20,7 @@ export default function EnginePicker({ onDone }: { onDone: () => void }) {
     modelCatalog()
       .then((list) =>
         setCatalog(
-          list.filter(
-            (m) =>
-              (m.engine === "parakeet" || m.engine === "whisper") && !m.english_only,
-          ),
+          list.filter((m) => m.engine === "whisper" && !m.english_only),
         ),
       )
       .catch((e) => setError(String(e)));
@@ -40,12 +37,7 @@ export default function EnginePicker({ onDone }: { onDone: () => void }) {
     setProgress(0);
     try {
       await modelDownload(engine, name);
-      if (engine === "parakeet") {
-        const version = name.includes("v2") ? "v2" : "v3";
-        await settingsUpdate({ engine: "parakeet", parakeet_version: version });
-      } else {
-        await settingsUpdate({ engine: "whisper", whisper_model: name });
-      }
+      await settingsUpdate({ engine: "whisper", whisper_model: name });
       onDone();
     } catch (e) {
       setError(String(e));
@@ -54,10 +46,12 @@ export default function EnginePicker({ onDone }: { onDone: () => void }) {
     }
   };
 
-  const options = [
-    ...catalog.filter((m) => m.engine === "parakeet"),
-    ...catalog.filter((m) => m.engine === "whisper").slice(0, 3),
-  ];
+  // tiny / base / small — bons pra ditado sem baixar GB no 1º run
+  const options = catalog
+    .filter((m) =>
+      ["openai_whisper-tiny", "openai_whisper-base", "openai_whisper-small"].includes(m.name),
+    )
+    .sort((a, b) => a.approx_bytes - b.approx_bytes);
 
   return (
     <div

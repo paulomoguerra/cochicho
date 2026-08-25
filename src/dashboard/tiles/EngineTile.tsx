@@ -28,7 +28,7 @@ function whisperDisplay(name: string): string {
 
 function effectiveEngine(settings: Settings, isMac: boolean): EngineKind {
   if (settings.engine) return settings.engine;
-  return isMac ? "apple" : "parakeet";
+  return isMac ? "apple" : "whisper";
 }
 
 export function EngineTile({
@@ -67,11 +67,13 @@ export function EngineTile({
   const engineOptions = useMemo(() => {
     const opts: { value: EngineKind; label: string }[] = [];
     if (isMac) opts.push({ value: "apple", label: "APPLE" });
-    opts.push({ value: "parakeet", label: "PARAKEET" }, { value: "whisper", label: "WHISPER" });
+    // Parakeet some do picker enquanto for stub (sherpa-onnx ainda não linkado).
+    opts.push({ value: "whisper", label: "WHISPER" });
     return opts;
   }, [isMac]);
 
   const setEngine = (next: EngineKind) => {
+    // Se settings antigos ainda apontam pra Parakeet stub, qualquer troca limpa o caminho.
     setShowingDownloads(false);
     void settingsUpdate({ engine: next });
   };

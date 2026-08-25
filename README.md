@@ -19,11 +19,11 @@ como referência.
 | Engine | macOS | Linux | Notas |
 | --- | --- | --- | --- |
 | **Apple Local** (SpeechAnalyzer) | sim (**padrão**) | — | só Apple Silicon / macOS recente |
-| **Parakeet** TDT v2/v3 | sim | sim | stub por enquanto (sherpa-onnx real ainda pendente) |
-| **Whisper** (whisper.cpp, GGUF) | sim | sim (**recomendado no Linux**) | CPU; tiny → large-v3 |
+| **Parakeet** TDT v2/v3 | — (stub) | — (stub) | some do UI até o sherpa-onnx linkar |
+| **Whisper** (whisper.cpp, GGUF) | sim | sim (**padrão no Linux**) | CPU; tiny → large-v3 |
 
-No Linux, o primeiro run pergunta qual engine usar e baixa o modelo. No macOS o
-padrão é Apple; Whisper/Parakeet ficam opcionais nas settings.
+No Linux, o primeiro run pergunta qual modelo Whisper baixar. No macOS o padrão é
+Apple; Whisper fica opcional nas settings.
 
 ---
 
@@ -102,21 +102,14 @@ sudo apt-get install -y \
 
 ### Permissões de hotkey + colar texto
 
-O hotkey lê `/dev/input/event*` (grupo `input`). A injeção de texto usa
-`/dev/uinput`.
-
 ```bash
-sudo usermod -aG input "$USER"
-# relogue (ou reinicie a sessão gráfica) depois disso
-
-echo 'KERNEL=="uinput", MODE="0660", GROUP="input", OPTIONS+="static_node=uinput"' \
-  | sudo tee /etc/udev/rules.d/99-ekonami-uinput.rules
-sudo udevadm control --reload-rules
-sudo udevadm trigger
-sudo modprobe uinput
+bash scripts/linux-setup.sh
+# depois: saia e entre de novo na sessão gráfica (obrigatório pro grupo `input`)
 ```
 
-Sem o grupo `input` o app sobe, mas o hotkey global não funciona.
+O script adiciona você ao grupo `input` (hotkey via `/dev/input/event*`) e cria a
+regra udev de `/dev/uinput` (colar texto). Sem o relogin o app sobe, mas o hotkey
+global não funciona.
 
 ### Dev
 
@@ -147,8 +140,8 @@ ekonami
 
 ### Engine padrão
 
-No primeiro run o app mostra o picker. **Use Whisper** (tiny ou base) pra testar
-ditado de verdade — Parakeet ainda é stub e não transcreve.
+No primeiro run o app mostra o picker de **Whisper** (tiny / base / small). Parakeet
+fica fora do UI até o backend real existir.
 
 ---
 

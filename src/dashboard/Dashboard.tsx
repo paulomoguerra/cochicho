@@ -79,7 +79,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     settingsGet()
-      .then(setSettings)
+      .then((s) => {
+        // Parakeet ainda é stub — quem escolheu no 1º run Linux volta pra Whisper.
+        if (s.engine === "parakeet") {
+          void settingsUpdate({ engine: "whisper" }).then(setSettings);
+        } else {
+          setSettings(s);
+        }
+      })
       .catch(() => {});
     dictationState()
       .then((p) => setState(p.state))
