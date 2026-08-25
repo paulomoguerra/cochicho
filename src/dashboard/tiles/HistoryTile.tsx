@@ -96,7 +96,7 @@ export function HistoryTile({
                   padding: 10,
                   border: "none",
                   borderRadius: 10,
-                  background: "rgba(255,255,255,0.03)",
+                  background: "var(--fill-faint)",
                   color: "var(--ink)",
                   cursor: "pointer",
                 }}
@@ -121,7 +121,7 @@ export function HistoryTile({
                         color: "var(--ink-dim)",
                         padding: "2px 6px",
                         borderRadius: 999,
-                        background: "rgba(255,255,255,0.06)",
+                        background: "var(--fill)",
                         textTransform: "uppercase",
                       }}
                     >

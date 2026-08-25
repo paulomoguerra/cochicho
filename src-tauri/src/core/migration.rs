@@ -241,6 +241,7 @@ pub fn settings_from_legacy_map(map: &serde_json::Map<String, Value>) -> Setting
             "v2" => ParakeetVersion::V2,
             _ => ParakeetVersion::V3,
         };
+        file.parakeet_model = file.parakeet_version.model_name().into();
     }
     if let Some(v) = map.get("whisperModel").and_then(|v| v.as_str()) {
         file.whisper_model = v.to_string();

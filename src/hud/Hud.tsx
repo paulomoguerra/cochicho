@@ -26,7 +26,6 @@ export default function Hud() {
         setError(p.error);
       }),
       onTranscript((p) => setText(p.text)),
-      // Nível chega a ~60fps; amostra 1 a cada 4 para o dot-matrix.
       onAudioLevel((level) => {
         frame.current = (frame.current + 1) % 4;
         if (frame.current !== 0) return;
@@ -41,21 +40,7 @@ export default function Hud() {
   const active = state === "listening" || state === "starting";
 
   return (
-    <div
-      style={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 10,
-        background: "rgba(19, 18, 17, 0.92)",
-        border: "1px solid var(--card-border)",
-        borderRadius: 16,
-        padding: "12px 18px",
-        overflow: "hidden",
-      }}
-    >
+    <div className="hud-shell">
       <div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: 28 }}>
         {levels.map((level, i) => (
           <div

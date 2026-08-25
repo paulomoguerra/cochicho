@@ -19,10 +19,27 @@ pub struct ModelInfo {
     pub approx_bytes: u64,
     /// Modelos .en só fazem inglês — escondidos quando o idioma é pt-BR.
     pub english_only: bool,
+    pub label: &'static str,
+    pub family: &'static str,
+    /// "" se não se aplica; senão Q5 / Q8 / INT8 / FP16 / F16.
+    pub quant: &'static str,
+    pub languages: &'static str,
+    /// 1 (lento) … 5 (rápido).
+    pub speed: u8,
+    /// 1 (fraco) … 5 (preciso).
+    pub quality: u8,
+    pub ram_mb: u32,
+    pub blurb: &'static str,
+    pub recommended: bool,
 }
 
 macro_rules! whisper_model {
-    ($name:literal, $file:literal, $bytes:expr, $en:expr) => {
+    (
+        $name:literal, $file:literal, $bytes:expr, $en:expr,
+        $label:literal, $family:literal, $quant:literal,
+        $langs:expr, $speed:expr, $quality:expr, $ram:expr,
+        $blurb:literal, $rec:expr
+    ) => {
         ModelInfo {
             name: $name,
             engine: EngineKind::Whisper,
@@ -33,21 +50,56 @@ macro_rules! whisper_model {
             ),
             approx_bytes: $bytes,
             english_only: $en,
+            label: $label,
+            family: $family,
+            quant: $quant,
+            languages: $langs,
+            speed: $speed,
+            quality: $quality,
+            ram_mb: $ram,
+            blurb: $blurb,
+            recommended: $rec,
         }
     };
 }
 
+const ML: &str = "99 idiomas";
+const EN: &str = "inglês";
+
 pub const WHISPER_CATALOG: &[ModelInfo] = &[
-    whisper_model!("openai_whisper-tiny", "ggml-tiny.bin", 78_000_000, false),
-    whisper_model!("openai_whisper-tiny.en", "ggml-tiny.en.bin", 78_000_000, true),
-    whisper_model!("openai_whisper-base", "ggml-base.bin", 148_000_000, false),
-    whisper_model!("openai_whisper-base.en", "ggml-base.en.bin", 148_000_000, true),
-    whisper_model!("openai_whisper-small", "ggml-small.bin", 488_000_000, false),
-    whisper_model!("openai_whisper-small.en", "ggml-small.en.bin", 488_000_000, true),
-    whisper_model!("openai_whisper-medium", "ggml-medium.bin", 1_530_000_000, false),
-    whisper_model!("openai_whisper-medium.en", "ggml-medium.en.bin", 1_530_000_000, true),
-    whisper_model!("openai_whisper-large-v3", "ggml-large-v3.bin", 3_100_000_000, false),
-    whisper_model!("openai_whisper-large-v3-turbo", "ggml-large-v3-turbo.bin", 1_620_000_000, false),
+    whisper_model!("openai_whisper-tiny-q5_1", "ggml-tiny-q5_1.bin", 33_000_000, false, "TINY", "tiny", "Q5", ML, 5, 1, 200, "O menor. Ditado curto, pouco RAM.", true),
+    whisper_model!("openai_whisper-tiny-q8_0", "ggml-tiny-q8_0.bin", 44_000_000, false, "TINY", "tiny", "Q8", ML, 5, 1, 240, "Tiny um pouco mais fiel que Q5.", false),
+    whisper_model!("openai_whisper-tiny", "ggml-tiny.bin", 78_000_000, false, "TINY", "tiny", "F16", ML, 5, 1, 300, "Tiny completo. Rápido, impreciso.", false),
+    whisper_model!("openai_whisper-tiny.en-q5_1", "ggml-tiny.en-q5_1.bin", 33_000_000, true, "TINY EN", "tiny", "Q5", EN, 5, 2, 200, "Tiny só inglês, quantizado.", false),
+    whisper_model!("openai_whisper-tiny.en-q8_0", "ggml-tiny.en-q8_0.bin", 44_000_000, true, "TINY EN", "tiny", "Q8", EN, 5, 2, 240, "Tiny só inglês, Q8.", false),
+    whisper_model!("openai_whisper-tiny.en", "ggml-tiny.en.bin", 78_000_000, true, "TINY EN", "tiny", "F16", EN, 5, 2, 300, "Tiny só inglês, completo.", false),
+    whisper_model!("openai_whisper-base-q5_1", "ggml-base-q5_1.bin", 60_000_000, false, "BASE", "base", "Q5", ML, 4, 2, 320, "Padrão leve. Bom primeiro modelo.", true),
+    whisper_model!("openai_whisper-base-q8_0", "ggml-base-q8_0.bin", 82_000_000, false, "BASE", "base", "Q8", ML, 4, 2, 380, "Base Q8, um pouco mais fiel.", false),
+    whisper_model!("openai_whisper-base", "ggml-base.bin", 148_000_000, false, "BASE", "base", "F16", ML, 4, 2, 500, "Base completo. Equilíbrio antigo.", false),
+    whisper_model!("openai_whisper-base.en-q5_1", "ggml-base.en-q5_1.bin", 60_000_000, true, "BASE EN", "base", "Q5", EN, 4, 3, 320, "Base só inglês, quantizado.", false),
+    whisper_model!("openai_whisper-base.en-q8_0", "ggml-base.en-q8_0.bin", 82_000_000, true, "BASE EN", "base", "Q8", EN, 4, 3, 380, "Base só inglês, Q8.", false),
+    whisper_model!("openai_whisper-base.en", "ggml-base.en.bin", 148_000_000, true, "BASE EN", "base", "F16", EN, 4, 3, 500, "Base só inglês, completo.", false),
+    whisper_model!("openai_whisper-small-q5_1", "ggml-small-q5_1.bin", 190_000_000, false, "SMALL", "small", "Q5", ML, 3, 3, 700, "Melhor custo/qualidade pra PT.", true),
+    whisper_model!("openai_whisper-small-q8_0", "ggml-small-q8_0.bin", 264_000_000, false, "SMALL", "small", "Q8", ML, 3, 3, 850, "Small Q8, mais fiel que Q5.", false),
+    whisper_model!("openai_whisper-small", "ggml-small.bin", 488_000_000, false, "SMALL", "small", "F16", ML, 3, 3, 1_100, "Small completo. Ditado do dia a dia.", false),
+    whisper_model!("openai_whisper-small.en-q5_1", "ggml-small.en-q5_1.bin", 190_000_000, true, "SMALL EN", "small", "Q5", EN, 3, 4, 700, "Small só inglês, quantizado.", false),
+    whisper_model!("openai_whisper-small.en-q8_0", "ggml-small.en-q8_0.bin", 264_000_000, true, "SMALL EN", "small", "Q8", EN, 3, 4, 850, "Small só inglês, Q8.", false),
+    whisper_model!("openai_whisper-small.en", "ggml-small.en.bin", 488_000_000, true, "SMALL EN", "small", "F16", EN, 3, 4, 1_100, "Small só inglês, completo.", false),
+    whisper_model!("openai_whisper-medium-q5_0", "ggml-medium-q5_0.bin", 539_000_000, false, "MEDIUM", "medium", "Q5", ML, 2, 4, 1_400, "Quase large, metade do disco.", false),
+    whisper_model!("openai_whisper-medium-q8_0", "ggml-medium-q8_0.bin", 823_000_000, false, "MEDIUM", "medium", "Q8", ML, 2, 4, 1_800, "Medium Q8. Quase o F16, bem menor.", false),
+    whisper_model!("openai_whisper-medium", "ggml-medium.bin", 1_530_000_000, false, "MEDIUM", "medium", "F16", ML, 2, 4, 2_600, "Preciso e pesado. CPU sofre.", false),
+    whisper_model!("openai_whisper-medium.en-q5_0", "ggml-medium.en-q5_0.bin", 539_000_000, true, "MEDIUM EN", "medium", "Q5", EN, 2, 4, 1_400, "Medium só inglês, quantizado.", false),
+    whisper_model!("openai_whisper-medium.en-q8_0", "ggml-medium.en-q8_0.bin", 823_000_000, true, "MEDIUM EN", "medium", "Q8", EN, 2, 4, 1_800, "Medium só inglês, Q8.", false),
+    whisper_model!("openai_whisper-medium.en", "ggml-medium.en.bin", 1_530_000_000, true, "MEDIUM EN", "medium", "F16", EN, 2, 4, 2_600, "Medium só inglês, completo.", false),
+    whisper_model!("openai_whisper-large-v2-q5_0", "ggml-large-v2-q5_0.bin", 1_180_000_000, false, "LARGE V2", "large-v2", "Q5", ML, 1, 4, 2_200, "Large v2 quantizado. Legado sólido.", false),
+    whisper_model!("openai_whisper-large-v2-q8_0", "ggml-large-v2-q8_0.bin", 1_610_000_000, false, "LARGE V2", "large-v2", "Q8", ML, 1, 4, 2_800, "Large v2 Q8. Quase o F16.", false),
+    whisper_model!("openai_whisper-large-v2", "ggml-large-v2.bin", 3_100_000_000, false, "LARGE V2", "large-v2", "F16", ML, 1, 4, 5_000, "Large v2 completo. ~3 GB.", false),
+    whisper_model!("openai_whisper-large-v1", "ggml-large-v1.bin", 3_100_000_000, false, "LARGE V1", "large-v1", "F16", ML, 1, 3, 5_000, "Primeira large. Prefira v2 ou v3.", false),
+    whisper_model!("openai_whisper-large-v3-q5_0", "ggml-large-v3-q5_0.bin", 1_180_000_000, false, "LARGE V3", "large-v3", "Q5", ML, 1, 5, 2_200, "Melhor qualidade Whisper, disco menor.", false),
+    whisper_model!("openai_whisper-large-v3", "ggml-large-v3.bin", 3_100_000_000, false, "LARGE V3", "large-v3", "F16", ML, 1, 5, 5_000, "Teto do Whisper. Lento na CPU.", false),
+    whisper_model!("openai_whisper-large-v3-turbo-q5_0", "ggml-large-v3-turbo-q5_0.bin", 574_000_000, false, "TURBO", "turbo", "Q5", ML, 4, 4, 1_000, "Quase large, bem mais rápido.", true),
+    whisper_model!("openai_whisper-large-v3-turbo-q8_0", "ggml-large-v3-turbo-q8_0.bin", 875_000_000, false, "TURBO", "turbo", "Q8", ML, 3, 4, 1_400, "Turbo Q8. Qualidade/velocidade.", false),
+    whisper_model!("openai_whisper-large-v3-turbo", "ggml-large-v3-turbo.bin", 1_620_000_000, false, "TURBO", "turbo", "F16", ML, 3, 4, 2_500, "Turbo completo. Melhor large pra CPU.", false),
     ModelInfo {
         name: "distil-whisper_large-v3",
         engine: EngineKind::Whisper,
@@ -55,11 +107,20 @@ pub const WHISPER_CATALOG: &[ModelInfo] = &[
         url: "https://huggingface.co/distil-whisper/distil-large-v3-ggml/resolve/main/ggml-distil-large-v3.bin",
         approx_bytes: 1_510_000_000,
         english_only: true,
+        label: "DISTIL V3",
+        family: "distil",
+        quant: "F16",
+        languages: EN,
+        speed: 3,
+        quality: 4,
+        ram_mb: 2_400,
+        blurb: "Large destilado. Só inglês, mais rápido.",
+        recommended: false,
     },
 ];
 
-/// URLs oficiais dos releases `asr-models` do sherpa-onnx (tar.bz2 multi-arquivo).
-/// Verificadas 2026-08-24: GitHub responde 302 para os assets.
+/// URLs oficiais dos releases `asr-models` do sherpa-onnx (tar.bz2).
+/// Verificadas 2026-08-25 (HEAD 200 nos assets listados).
 pub const PARAKEET_CATALOG: &[ModelInfo] = &[
     ModelInfo {
         name: "parakeet-tdt-0.6b-v3",
@@ -68,6 +129,15 @@ pub const PARAKEET_CATALOG: &[ModelInfo] = &[
         url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2",
         approx_bytes: 650_000_000,
         english_only: false,
+        label: "TDT V3",
+        family: "tdt-v3",
+        quant: "INT8",
+        languages: "25 idiomas",
+        speed: 4,
+        quality: 4,
+        ram_mb: 900,
+        blurb: "NVIDIA 0.6B. Inclui português, pontuação e caixa.",
+        recommended: true,
     },
     ModelInfo {
         name: "parakeet-tdt-0.6b-v2",
@@ -76,6 +146,83 @@ pub const PARAKEET_CATALOG: &[ModelInfo] = &[
         url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2",
         approx_bytes: 640_000_000,
         english_only: true,
+        label: "TDT V2",
+        family: "tdt-v2",
+        quant: "INT8",
+        languages: EN,
+        speed: 4,
+        quality: 4,
+        ram_mb: 900,
+        blurb: "Mesma família, só inglês. Mais maduro que o v3 em EN.",
+        recommended: false,
+    },
+    ModelInfo {
+        name: "parakeet-tdt-0.6b-v2-fp16",
+        engine: EngineKind::Parakeet,
+        file: "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-fp16",
+        url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-fp16.tar.bz2",
+        approx_bytes: 1_200_000_000,
+        english_only: true,
+        label: "TDT V2",
+        family: "tdt-v2",
+        quant: "FP16",
+        languages: EN,
+        speed: 3,
+        quality: 5,
+        ram_mb: 1_400,
+        blurb: "V2 em FP16. Mais fiel, quase o dobro do disco.",
+        recommended: false,
+    },
+    ModelInfo {
+        name: "parakeet-tdt-110m-en",
+        engine: EngineKind::Parakeet,
+        file: "sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000-int8",
+        url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000-int8.tar.bz2",
+        approx_bytes: 108_000_000,
+        english_only: true,
+        label: "110M EN",
+        family: "110m",
+        quant: "INT8",
+        languages: EN,
+        speed: 5,
+        quality: 3,
+        ram_mb: 250,
+        blurb: "Parakeet leve. Só inglês, cabe em qualquer máquina.",
+        recommended: false,
+    },
+    ModelInfo {
+        name: "parakeet-tdt-110m-en-fp32",
+        engine: EngineKind::Parakeet,
+        file: "sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000",
+        url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000.tar.bz2",
+        approx_bytes: 453_000_000,
+        english_only: true,
+        label: "110M EN",
+        family: "110m",
+        quant: "FP32",
+        languages: EN,
+        speed: 4,
+        quality: 4,
+        ram_mb: 600,
+        blurb: "110M completo. Só inglês, mais fiel que o INT8.",
+        recommended: false,
+    },
+    ModelInfo {
+        name: "parakeet-unified-en-0.6b",
+        engine: EngineKind::Parakeet,
+        file: "sherpa-onnx-nemo-parakeet-unified-en-0.6b-int8-non-streaming",
+        url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-unified-en-0.6b-int8-non-streaming.tar.bz2",
+        approx_bytes: 650_000_000,
+        english_only: true,
+        label: "UNIFIED EN",
+        family: "unified",
+        quant: "INT8",
+        languages: EN,
+        speed: 4,
+        quality: 4,
+        ram_mb: 900,
+        blurb: "Parakeet Unified. Só inglês, batch (não streaming).",
+        recommended: false,
     },
 ];
 
@@ -159,9 +306,7 @@ pub fn model_path(info: &ModelInfo) -> PathBuf {
 }
 
 /// Arquivos ONNX + tokens dentro do diretório Parakeet extraído.
-/// Campos ficam prontos para o `TransducerRecognizer` quando sherpa-rs linkar.
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 pub struct ParakeetOnnxPaths {
     pub encoder: PathBuf,
     pub decoder: PathBuf,
@@ -179,9 +324,9 @@ pub fn parakeet_onnx_paths(dir: &Path) -> Option<ParakeetOnnxPaths> {
         }
         // Alternativas comuns nos releases sherpa-onnx.
         let alts: &[&str] = match needle {
-            "encoder.int8.onnx" => &["encoder.onnx"],
-            "decoder.int8.onnx" => &["decoder.onnx"],
-            "joiner.int8.onnx" => &["joiner.onnx"],
+            "encoder.int8.onnx" => &["encoder.fp16.onnx", "encoder.onnx"],
+            "decoder.int8.onnx" => &["decoder.fp16.onnx", "decoder.onnx"],
+            "joiner.int8.onnx" => &["joiner.fp16.onnx", "joiner.onnx"],
             "tokens.txt" => &[],
             _ => &[],
         };
@@ -277,6 +422,15 @@ pub struct ModelStatus {
     pub bytes_on_disk: u64,
     pub approx_bytes: u64,
     pub english_only: bool,
+    pub label: String,
+    pub family: String,
+    pub quant: String,
+    pub languages: String,
+    pub speed: u8,
+    pub quality: u8,
+    pub ram_mb: u32,
+    pub blurb: String,
+    pub recommended: bool,
 }
 
 pub fn catalog_status() -> Vec<ModelStatus> {
@@ -286,7 +440,7 @@ pub fn catalog_status() -> Vec<ModelStatus> {
         .map(|info| ModelStatus {
             name: info.name.to_string(),
             engine: info.engine,
-            display: info.file.to_string(),
+            display: info.label.to_string(),
             downloaded: is_downloaded(info),
             bytes_on_disk: if is_downloaded(info) {
                 disk_size(info)
@@ -295,6 +449,15 @@ pub fn catalog_status() -> Vec<ModelStatus> {
             },
             approx_bytes: info.approx_bytes,
             english_only: info.english_only,
+            label: info.label.to_string(),
+            family: info.family.to_string(),
+            quant: info.quant.to_string(),
+            languages: info.languages.to_string(),
+            speed: info.speed,
+            quality: info.quality,
+            ram_mb: info.ram_mb,
+            blurb: info.blurb.to_string(),
+            recommended: info.recommended,
         })
         .collect()
 }
@@ -500,6 +663,10 @@ mod tests {
             resolve_parakeet_model("parakeet-tdt-0.6b-v3").map(|m| m.file),
             Some("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8")
         );
+        assert_eq!(
+            resolve_parakeet_model("parakeet-tdt-110m-en").map(|m| m.file),
+            Some("sherpa-onnx-nemo-parakeet_tdt_transducer_110m-en-36000-int8")
+        );
     }
 
     #[test]
@@ -567,7 +734,63 @@ mod tests {
             url: "https://example.com/x",
             approx_bytes: 1,
             english_only: false,
+            label: "TEST",
+            family: "test",
+            quant: "",
+            languages: "x",
+            speed: 1,
+            quality: 1,
+            ram_mb: 1,
+            blurb: "test",
+            recommended: false,
         };
         assert!(delete_model(&fake).is_ok());
+    }
+
+    #[test]
+    fn names_are_unique() {
+        let mut seen = HashSet::new();
+        for info in WHISPER_CATALOG.iter().chain(PARAKEET_CATALOG.iter()) {
+            assert!(seen.insert(info.name), "duplicate name {}", info.name);
+        }
+    }
+
+    #[test]
+    fn recommended_whisper_and_parakeet_exist() {
+        for name in [
+            "openai_whisper-tiny-q5_1",
+            "openai_whisper-base-q5_1",
+            "openai_whisper-small-q5_1",
+            "openai_whisper-large-v3-turbo-q5_0",
+            "parakeet-tdt-0.6b-v3",
+        ] {
+            assert!(
+                find_model(
+                    if name.starts_with("parakeet") {
+                        EngineKind::Parakeet
+                    } else {
+                        EngineKind::Whisper
+                    },
+                    name
+                )
+                .is_some(),
+                "missing {name}"
+            );
+        }
+        assert!(WHISPER_CATALOG.iter().any(|m| m.recommended));
+        assert!(PARAKEET_CATALOG.iter().any(|m| m.recommended));
+    }
+
+    #[test]
+    fn metadata_is_filled() {
+        for info in WHISPER_CATALOG.iter().chain(PARAKEET_CATALOG.iter()) {
+            assert!(!info.label.is_empty(), "{}", info.name);
+            assert!(!info.family.is_empty(), "{}", info.name);
+            assert!(!info.languages.is_empty(), "{}", info.name);
+            assert!(!info.blurb.is_empty(), "{}", info.name);
+            assert!((1..=5).contains(&info.speed), "{}", info.name);
+            assert!((1..=5).contains(&info.quality), "{}", info.name);
+            assert!(info.ram_mb > 0, "{}", info.name);
+        }
     }
 }

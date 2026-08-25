@@ -103,7 +103,7 @@ export function DictionaryTile({
                   <span
                     style={{
                       fontSize: 9,
-                      color: entry.is_enabled ? "var(--accent)" : "rgba(255,69,0,0.3)",
+                      color: entry.is_enabled ? "var(--accent)" : "color-mix(in srgb, var(--accent) 30%, transparent)",
                     }}
                   >
                     →

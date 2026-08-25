@@ -42,6 +42,22 @@ impl ParakeetVersion {
             ParakeetVersion::V2 => "parakeet-tdt-0.6b-v2",
         }
     }
+
+    pub fn from_model_name(name: &str) -> Self {
+        if name.contains("v2") {
+            ParakeetVersion::V2
+        } else {
+            ParakeetVersion::V3
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Appearance {
+    #[default]
+    Dark,
+    Light,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -224,6 +240,9 @@ pub struct SettingsFile {
     /// None = nunca escolheu. macOS resolve para Apple; Linux abre o picker de engine.
     pub engine: Option<EngineKind>,
     pub parakeet_version: ParakeetVersion,
+    /// Nome canônico no catálogo Parakeet. Vazio no JSON antigo → preenchido no load.
+    #[serde(default)]
+    pub parakeet_model: String,
     /// Nome do modelo whisper (legado: "openai_whisper-base"; novo: "ggml-base.bin").
     pub whisper_model: String,
     pub language: Language,
@@ -244,6 +263,8 @@ pub struct SettingsFile {
     pub tile_layout: Vec<TileConfig>,
     pub custom_tile_layout: Vec<TileConfig>,
     pub layout_source_is_custom: bool,
+    #[serde(default)]
+    pub appearance: Appearance,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -260,6 +281,7 @@ impl Default for SettingsFile {
         Self {
             engine: None,
             parakeet_version: ParakeetVersion::V3,
+            parakeet_model: ParakeetVersion::V3.model_name().into(),
             whisper_model: "openai_whisper-base".into(),
             language: Language::PtBR,
             hotkey_mode: HotkeyMode::Hold,
@@ -276,6 +298,7 @@ impl Default for SettingsFile {
             tile_layout: TileConfig::default_layout().to_vec(),
             custom_tile_layout: Vec::new(),
             layout_source_is_custom: false,
+            appearance: Appearance::Dark,
         }
     }
 }
@@ -319,6 +342,9 @@ impl Settings {
             .and_then(|data| serde_json::from_slice(&data).ok())
             .unwrap_or_default();
         file.sanitize_presets();
+        if file.parakeet_model.trim().is_empty() {
+            file.parakeet_model = file.parakeet_version.model_name().into();
+        }
 
         Self {
             file: RwLock::new(file),

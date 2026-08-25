@@ -19,8 +19,8 @@ como referência.
 | Engine | macOS | Linux | Notas |
 | --- | --- | --- | --- |
 | **Apple Local** (SpeechAnalyzer) | sim (**padrão**) | — | só Apple Silicon / macOS recente |
-| **Parakeet** TDT v2/v3 | — (stub) | — (stub) | some do UI até o sherpa-onnx linkar |
-| **Whisper** (whisper.cpp, GGUF) | sim | sim (**padrão no Linux**) | CPU; tiny → large-v3 |
+| **Parakeet** TDT v2/v3 / 110m | sim | sim | sherpa-onnx (CPU, batch ao soltar) |
+| **Whisper** (whisper.cpp, GGML) | sim | sim (**padrão no Linux**) | CPU; tiny → large-v3 + quantizados |
 
 No Linux, o primeiro run pergunta qual modelo Whisper baixar. No macOS o padrão é
 Apple; Whisper fica opcional nas settings.
@@ -140,8 +140,8 @@ ekonami
 
 ### Engine padrão
 
-No primeiro run o app mostra o picker de **Whisper** (tiny / base / small). Parakeet
-fica fora do UI até o backend real existir.
+No primeiro run o app mostra o picker de **Whisper** (tiny / base / small Q5). Parakeet
+é opcional no card ENGINE.
 
 ---
 
@@ -161,7 +161,7 @@ mesmo OS que vai rodar.
 ## Status
 
 - M0–M4: scaffold, Linux e2e (Whisper), dashboard, backends macOS — feitos
-- Parakeet real (`sherpa-onnx`): pendente
+- Parakeet (`sherpa-onnx` via sherpa-rs): ligado
 - M5 polish (tray, sons, wizards) e M6 packaging assinado / CI: pendentes
 
 ## Licença

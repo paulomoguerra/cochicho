@@ -2,61 +2,98 @@
 //!
 //! **Batch, como o legacy.** O app Swift acumulava áudio e transcrevia uma vez no
 //! stop — sem texto ao vivo no HUD. Aqui: `feed()` acumula f32 16 kHz mono;
-//! `finish()` deveria decodificar uma vez. Sem live preview periódico.
-//!
-//! **sherpa-rs (fallback M2):** a integração real via `sherpa-rs` (bindings +
-//! prebuilt sherpa-onnx) ficou bloqueada neste ambiente — `crates.io` timeout
-//! persistente + ~9 GB livres (prebuilt + ONNXRuntime estouram o disco). O
-//! download/extração do modelo e o onboarding Linux seguem funcionando; a
-//! inferência retorna erro claro até o próximo passo: adicionar
-//! `sherpa-rs = { version = "0.6", default-features = false, features = ["download-binaries"] }`
-//! e completar `ensure_recognizer()` com `TransducerRecognizer`
-//! (`model_type: "nemo_transducer"`).
+//! `finish()` decodifica uma vez via sherpa-onnx (`nemo_transducer`).
 
 use std::sync::{Arc, Mutex};
 
+use sherpa_rs::transducer::{TransducerConfig, TransducerRecognizer};
+
 use crate::core::engine::{ChunkTx, EngineAvailability, EngineError, TranscriptChunk, TranscriptionEngine};
-use crate::core::models;
-use crate::core::settings::ParakeetVersion;
+use crate::core::models::{self, ParakeetOnnxPaths};
 
 /// Hard backstop igual ao Swift: 10 min @ 16 kHz ≈ 38 MB.
 const MAX_SAMPLES: usize = 16_000 * 600;
 /// Encoder precisa de janela mínima — toque acidental de tecla não é fala.
 const MIN_SAMPLES: usize = 1_600;
 
-const SHERPA_BLOCKED: &str = "Parakeet: sherpa-rs indisponível neste build \
-(crates.io timeout + disco limitado). Baixe o modelo normalmente; a inferência \
-chega quando sherpa-rs linkar. Ver cabeçalho de engine_parakeet.rs.";
+/// Um recognizer por processo, trocado se o modelo mudar.
+static RECOGNIZER: Mutex<Option<(String, TransducerRecognizer)>> = Mutex::new(None);
 
 pub struct ParakeetEngine {
-    version: ParakeetVersion,
+    model_name: String,
     buffer: Arc<Mutex<Vec<f32>>>,
     tx: Option<ChunkTx>,
 }
 
 impl ParakeetEngine {
-    pub fn new(version: ParakeetVersion) -> Self {
+    pub fn new(model_name: &str) -> Self {
         Self {
-            version,
+            model_name: model_name.to_string(),
             buffer: Arc::new(Mutex::new(Vec::new())),
             tx: None,
         }
     }
 
     fn model_info(&self) -> Result<&'static models::ModelInfo, EngineError> {
-        models::resolve_parakeet_model(self.version.model_name()).ok_or(EngineError::Unavailable)
+        models::resolve_parakeet_model(&self.model_name).ok_or(EngineError::Unavailable)
     }
-}
 
-#[async_trait::async_trait]
-impl TranscriptionEngine for ParakeetEngine {
-    async fn start(&mut self, _prompt: &str, _tx: ChunkTx) -> Result<(), EngineError> {
+    fn onnx_paths(&self) -> Result<ParakeetOnnxPaths, EngineError> {
         let info = self.model_info()?;
         if !models::is_downloaded(info) {
             return Err(EngineError::ModelNotDownloaded);
         }
-        // Modelo em disco ok — falta o runtime sherpa-onnx.
-        Err(EngineError::Failed(SHERPA_BLOCKED.into()))
+        models::parakeet_onnx_paths(&models::model_path(info))
+            .ok_or_else(|| EngineError::Failed("modelo Parakeet incompleto em disco".into()))
+    }
+}
+
+fn ensure_recognizer(model_name: &str, paths: &ParakeetOnnxPaths) -> Result<(), EngineError> {
+    let mut slot = RECOGNIZER.lock().unwrap();
+    if slot.as_ref().is_some_and(|(name, _)| name == model_name) {
+        return Ok(());
+    }
+    let config = TransducerConfig {
+        encoder: paths.encoder.to_string_lossy().into_owned(),
+        decoder: paths.decoder.to_string_lossy().into_owned(),
+        joiner: paths.joiner.to_string_lossy().into_owned(),
+        tokens: paths.tokens.to_string_lossy().into_owned(),
+        num_threads: 2,
+        sample_rate: 16_000,
+        feature_dim: 80,
+        decoding_method: "greedy_search".into(),
+        model_type: "nemo_transducer".into(),
+        debug: false,
+        ..Default::default()
+    };
+    let recognizer = TransducerRecognizer::new(config)
+        .map_err(|e| EngineError::Failed(format!("carregar Parakeet: {e}")))?;
+    *slot = Some((model_name.to_string(), recognizer));
+    Ok(())
+}
+
+fn transcribe(model_name: &str, paths: &ParakeetOnnxPaths, samples: &[f32]) -> Result<String, EngineError> {
+    ensure_recognizer(model_name, paths)?;
+    let mut slot = RECOGNIZER.lock().unwrap();
+    let recognizer = slot
+        .as_mut()
+        .map(|(_, rec)| rec)
+        .ok_or(EngineError::Unavailable)?;
+    Ok(recognizer.transcribe(16_000, samples).trim().to_string())
+}
+
+#[async_trait::async_trait]
+impl TranscriptionEngine for ParakeetEngine {
+    async fn start(&mut self, _prompt: &str, tx: ChunkTx) -> Result<(), EngineError> {
+        let paths = self.onnx_paths()?;
+        let model_name = self.model_name.clone();
+        tokio::task::spawn_blocking(move || ensure_recognizer(&model_name, &paths))
+            .await
+            .map_err(|e| EngineError::Failed(e.to_string()))??;
+
+        self.buffer.lock().unwrap().clear();
+        self.tx = Some(tx);
+        Ok(())
     }
 
     fn feed(&mut self, samples: &[f32]) {
@@ -78,13 +115,20 @@ impl TranscriptionEngine for ParakeetEngine {
             );
             return Ok(());
         }
+
+        let paths = self.onnx_paths()?;
+        let model_name = self.model_name.clone();
+        let text = tokio::task::spawn_blocking(move || transcribe(&model_name, &paths, &samples))
+            .await
+            .map_err(|e| EngineError::Failed(e.to_string()))??;
+
         if let Some(tx) = &self.tx {
             let _ = tx.send(TranscriptChunk {
-                text: String::new(),
+                text,
                 is_final: true,
             });
         }
-        Err(EngineError::Failed(SHERPA_BLOCKED.into()))
+        Ok(())
     }
 
     async fn cancel(&mut self) {
@@ -129,7 +173,7 @@ mod tests {
 
     #[test]
     fn new_engine_needs_download_without_files() {
-        let engine = ParakeetEngine::new(ParakeetVersion::V3);
+        let engine = ParakeetEngine::new("parakeet-tdt-0.6b-v3");
         assert_eq!(engine.availability(), EngineAvailability::NeedsDownload);
     }
 

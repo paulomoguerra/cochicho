@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   type EngineKind,
   type ModelStatus,
-  type ParakeetVersion,
   type Settings,
   modelCatalog,
   modelDelete,
@@ -11,7 +10,7 @@ import {
   settingsUpdate,
 } from "../../lib/ipc";
 import { isRoomy, type TileSize } from "../layout";
-import { Card, CardHeader, DownloadBar, PillButton, SegmentPicker, Stat } from "../ui";
+import { Card, CardHeader, DownloadBar, SegmentPicker, Stat } from "../ui";
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 MB";
@@ -19,11 +18,8 @@ function formatBytes(bytes: number): string {
   return mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${Math.round(mb)} MB`;
 }
 
-function whisperDisplay(name: string): string {
-  return name
-    .replace(/^openai_whisper-/, "")
-    .replace(/^distil-whisper_/, "distil-")
-    .toUpperCase();
+function modelTitle(m: ModelStatus): string {
+  return m.quant ? `${m.label} ${m.quant}` : m.label;
 }
 
 function effectiveEngine(settings: Settings, isMac: boolean): EngineKind {
@@ -67,13 +63,12 @@ export function EngineTile({
   const engineOptions = useMemo(() => {
     const opts: { value: EngineKind; label: string }[] = [];
     if (isMac) opts.push({ value: "apple", label: "APPLE" });
-    // Parakeet some do picker enquanto for stub (sherpa-onnx ainda não linkado).
+    opts.push({ value: "parakeet", label: "PARAKEET" });
     opts.push({ value: "whisper", label: "WHISPER" });
     return opts;
   }, [isMac]);
 
   const setEngine = (next: EngineKind) => {
-    // Se settings antigos ainda apontam pra Parakeet stub, qualquer troca limpa o caminho.
     setShowingDownloads(false);
     void settingsUpdate({ engine: next });
   };
@@ -106,12 +101,6 @@ export function EngineTile({
 
   const whisperModels = catalog.filter((m) => m.engine === "whisper");
   const parakeetModels = catalog.filter((m) => m.engine === "parakeet");
-  const selectedParakeet =
-    parakeetModels.find((m) =>
-      settings.parakeet_version === "v2"
-        ? m.name.includes("v2")
-        : m.name.includes("v3"),
-    ) ?? parakeetModels[0];
 
   return (
     <Card>
@@ -146,23 +135,19 @@ export function EngineTile({
               <ParakeetSection
                 size={size}
                 settings={settings}
-                model={selectedParakeet}
+                models={parakeetModels}
                 busyName={busyName}
                 progress={progress}
-                roomy={roomy}
-                onVersion={(v) => void settingsUpdate({ parakeet_version: v })}
-                onDownload={() => {
-                  if (!selectedParakeet) return;
-                  void download("parakeet", selectedParakeet.name, () =>
-                    settingsUpdate({
-                      engine: "parakeet",
-                      parakeet_version: settings.parakeet_version,
-                    }),
-                  );
-                }}
-                onDelete={() => {
-                  if (selectedParakeet) void remove("parakeet", selectedParakeet.name);
-                }}
+                failed={failed}
+                onSelect={(name) =>
+                  void settingsUpdate({ engine: "parakeet", parakeet_model: name })
+                }
+                onDownload={(name) =>
+                  void download("parakeet", name, () =>
+                    settingsUpdate({ engine: "parakeet", parakeet_model: name }),
+                  )
+                }
+                onDelete={(name) => void remove("parakeet", name)}
               />
             )}
             {engine === "whisper" && (
@@ -173,7 +158,6 @@ export function EngineTile({
                 busyName={busyName}
                 progress={progress}
                 failed={failed}
-                roomy={roomy}
                 onSelect={(name) => void settingsUpdate({ engine: "whisper", whisper_model: name })}
                 onDownload={(name) =>
                   void download("whisper", name, () =>
@@ -224,61 +208,61 @@ function AppleSection({
 function ParakeetSection({
   size,
   settings,
-  model,
+  models,
   busyName,
   progress,
-  roomy,
-  onVersion,
+  failed,
+  onSelect,
   onDownload,
   onDelete,
 }: {
   size: TileSize;
   settings: Settings;
-  model: ModelStatus | undefined;
+  models: ModelStatus[];
   busyName: string | null;
   progress: number;
-  roomy: boolean;
-  onVersion: (v: ParakeetVersion) => void;
-  onDownload: () => void;
-  onDelete: () => void;
+  failed: string | null;
+  onSelect: (name: string) => void;
+  onDownload: (name: string) => void;
+  onDelete: (name: string) => void;
 }) {
-  const downloading = !!model && busyName === model.name;
+  const selected = models.find((m) => m.name === settings.parakeet_model) ?? models[0];
+  const visible = models;
+
+  if (size === "small") {
+    return (
+      <>
+        <div style={{ flex: 1 }} />
+        <StatusLine text={selected ? modelTitle(selected) : "PARAKEET"} />
+      </>
+    );
+  }
+
   return (
     <>
-      {size !== "small" && <span className="muted">VERSÃO</span>}
-      <SegmentPicker
-        options={[
-          { value: "v3", label: "V3" },
-          { value: "v2", label: "V2" },
-        ]}
-        value={settings.parakeet_version}
-        onChange={onVersion}
+      <span className="muted">MODELO</span>
+      <ModelCatalogList
+        models={visible}
+        selectedName={settings.parakeet_model}
+        busyName={busyName}
+        progress={progress}
+        failed={failed}
+        compact
+        onSelect={onSelect}
+        onDownload={onDownload}
+        onDelete={onDelete}
       />
-      <div style={{ flex: 1 }} />
-      {roomy && <PerfPlaceholder />}
-      {model?.downloaded ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <StatusLine
-            text={
-              size === "small"
-                ? `PARAKEET ${settings.parakeet_version.toUpperCase()} · LOCAL`
-                : `PARAKEET ${settings.parakeet_version.toUpperCase()} · ${formatBytes(model.bytes_on_disk || model.approx_bytes)}`
-            }
-          />
-          {size !== "small" && (
-            <button type="button" className="row-btn" onClick={onDelete}>
-              EXCLUIR
-            </button>
-          )}
-        </div>
-      ) : (
-        <>
-          <PillButton disabled={!!busyName} onClick={onDownload}>
-            {downloading ? "BAIXANDO…" : "BAIXAR MODELO"}
-          </PillButton>
-          {downloading && <DownloadBar fraction={progress} />}
-        </>
-      )}
+      {busyName && <DownloadBar fraction={progress} />}
+      {selected && <ModelDetail model={selected} />}
+      <StatusLine
+        text={
+          selected?.downloaded
+            ? `${modelTitle(selected)} · ${formatBytes(selected.bytes_on_disk || selected.approx_bytes)}`
+            : selected
+              ? `${modelTitle(selected)} · BAIXAR`
+              : "PARAKEET"
+        }
+      />
     </>
   );
 }
@@ -290,7 +274,6 @@ function WhisperSection({
   busyName,
   progress,
   failed,
-  roomy,
   onSelect,
   onDownload,
   onDelete,
@@ -301,20 +284,18 @@ function WhisperSection({
   busyName: string | null;
   progress: number;
   failed: string | null;
-  roomy: boolean;
   onSelect: (name: string) => void;
   onDownload: (name: string) => void;
   onDelete: (name: string) => void;
 }) {
-  const visible = models.filter(
-    (m) => !m.english_only || settings.language === "en-US",
-  );
+  const visible = models.filter((m) => !m.english_only || settings.language === "en-US");
+  const selected = visible.find((m) => m.name === settings.whisper_model);
 
   if (size === "small") {
     return (
       <>
         <div style={{ flex: 1 }} />
-        <StatusLine text={whisperDisplay(settings.whisper_model)} />
+        <StatusLine text={selected ? modelTitle(selected) : settings.whisper_model} />
       </>
     );
   }
@@ -331,76 +312,167 @@ function WhisperSection({
         onChange={(language) => void settingsUpdate({ language })}
       />
       <span className="muted">MODELO</span>
+      <ModelCatalogList
+        models={visible}
+        selectedName={settings.whisper_model}
+        busyName={busyName}
+        progress={progress}
+        failed={failed}
+        onSelect={onSelect}
+        onDownload={onDownload}
+        onDelete={onDelete}
+      />
+      {busyName && <DownloadBar fraction={progress} />}
+      {selected && <ModelDetail model={selected} />}
+      <StatusLine text={selected ? modelTitle(selected) : settings.whisper_model} />
+    </>
+  );
+}
+
+function ModelCatalogList({
+  models,
+  selectedName,
+  busyName,
+  progress,
+  failed,
+  compact,
+  onSelect,
+  onDownload,
+  onDelete,
+}: {
+  models: ModelStatus[];
+  selectedName: string;
+  busyName: string | null;
+  progress: number;
+  failed: string | null;
+  compact?: boolean;
+  onSelect: (name: string) => void;
+  onDownload: (name: string) => void;
+  onDelete: (name: string) => void;
+}) {
+  const [showAll, setShowAll] = useState(!!compact);
+  const hidden = models.filter(
+    (m) => !(m.recommended || m.downloaded || m.name === selectedName),
+  );
+  const visible = showAll
+    ? models
+    : models.filter((m) => m.recommended || m.downloaded || m.name === selectedName);
+
+  const groups: { family: string; items: ModelStatus[] }[] = [];
+  for (const m of visible) {
+    const last = groups[groups.length - 1];
+    if (last && last.family === m.family) last.items.push(m);
+    else groups.push({ family: m.family, items: [m] });
+  }
+
+  const showFamily = groups.length > 1;
+
+  return (
+    <>
       <div className="row-list">
-        {visible.map((m) => {
-          const selected = settings.whisper_model === m.name;
-          const downloading = busyName === m.name;
-          return (
-            <button
-              key={m.name}
-              type="button"
-              className="row"
-              style={{
-                width: "100%",
-                cursor: "pointer",
-                border: "none",
-                textAlign: "left",
-                background: selected ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.02)",
-                color: selected ? "var(--accent)" : m.downloaded ? "var(--ink)" : "var(--ink-dim)",
-                fontSize: 9,
-                fontWeight: selected ? 600 : 400,
-              }}
-              onClick={() => {
-                if (m.downloaded) onSelect(m.name);
-                else onDownload(m.name);
-              }}
-            >
-              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>
-                {whisperDisplay(m.name)}
-              </span>
-              <span style={{ color: "var(--ink-faint)", fontSize: 8 }}>
-                {m.downloaded
-                  ? formatBytes(m.bytes_on_disk || m.approx_bytes)
-                  : `~${formatBytes(m.approx_bytes)}`}
-              </span>
-              {downloading ? (
-                <span style={{ color: "var(--accent)", fontSize: 8 }}>
-                  {Math.round(progress * 100)}%
-                </span>
-              ) : failed === m.name ? (
-                <span style={{ color: "var(--accent)", fontSize: 8 }}>ERRO</span>
-              ) : selected ? (
-                <span style={{ color: "var(--accent)" }}>✓</span>
-              ) : !m.downloaded ? (
-                <span style={{ color: "var(--ink-dim)", fontSize: 8 }}>BAIXAR</span>
-              ) : null}
-              {m.downloaded && (
-                <span
-                  role="button"
-                  tabIndex={0}
-                  className="row-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(m.name);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.stopPropagation();
-                      onDelete(m.name);
-                    }
+        {groups.map((g) => (
+          <div key={g.family}>
+            {showFamily && <div className="model-family">{g.family.replace("-", " ")}</div>}
+            {g.items.map((m) => {
+              const selected = selectedName === m.name;
+              const downloading = busyName === m.name;
+              return (
+                <button
+                  key={m.name}
+                  type="button"
+                  className={`row model-row${selected ? " selected" : ""}${m.downloaded && !selected ? " ready" : ""}`}
+                  onClick={() => {
+                    if (m.downloaded) onSelect(m.name);
+                    else onDownload(m.name);
                   }}
                 >
-                  ×
-                </span>
-              )}
-            </button>
-          );
-        })}
+                  <span className="model-title">{modelTitle(m)}</span>
+                  {m.recommended ? <span className="model-rec">REC</span> : null}
+                  <span className="model-meta">{m.languages}</span>
+                  <span className="model-meta">
+                    {m.downloaded
+                      ? formatBytes(m.bytes_on_disk || m.approx_bytes)
+                      : `~${formatBytes(m.approx_bytes)}`}
+                  </span>
+                  {downloading ? (
+                    <span className="model-meta" style={{ color: "var(--accent)" }}>
+                      {Math.round(progress * 100)}%
+                    </span>
+                  ) : failed === m.name ? (
+                    <span className="model-meta" style={{ color: "var(--accent)" }}>
+                      ERRO
+                    </span>
+                  ) : selected ? (
+                    <span style={{ color: "var(--accent)" }}>✓</span>
+                  ) : !m.downloaded ? (
+                    <span className="model-meta">BAIXAR</span>
+                  ) : null}
+                  {m.downloaded && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="row-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(m.name);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.stopPropagation();
+                          onDelete(m.name);
+                        }
+                      }}
+                    >
+                      ×
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </div>
-      {busyName && <DownloadBar fraction={progress} />}
-      {roomy && <PerfPlaceholder />}
-      <StatusLine text={whisperDisplay(settings.whisper_model)} />
+      {!compact && hidden.length > 0 && (
+        <button type="button" className="seg-btn" onClick={() => setShowAll((v) => !v)}>
+          {showAll ? "MENOS" : `TODOS (${models.length})`}
+        </button>
+      )}
     </>
+  );
+}
+
+function ModelDetail({ model }: { model: ModelStatus }) {
+  const ram =
+    model.ram_mb >= 1000
+      ? `~${(model.ram_mb / 1000).toFixed(1)} GB RAM`
+      : `~${model.ram_mb} MB RAM`;
+  const disk = `~${formatBytes(model.approx_bytes)}`;
+  return (
+    <div className="model-detail">
+      <p className="model-detail-blurb">{model.blurb}</p>
+      <div className="model-meta">
+        {model.languages}
+        {model.quant ? ` · ${model.quant}` : ""}
+        {` · ${disk}`}
+        {` · ${ram}`}
+        {model.english_only ? " · só EN" : ""}
+      </div>
+      <div className="model-scores">
+        <Score label="VEL" value={model.speed} />
+        <Score label="QUAL" value={model.quality} />
+      </div>
+    </div>
+  );
+}
+
+function Score({ label, value }: { label: string; value: number }) {
+  return (
+    <span className="score">
+      <span className="score-label">{label}</span>
+      {Array.from({ length: 5 }, (_, i) => (
+        <span key={i} className={`score-dot${i < value ? " on" : ""}`} />
+      ))}
+    </span>
   );
 }
 
@@ -463,7 +535,7 @@ function Group({
         ) : (
           rows.map((m) => (
             <div key={m.name} className="row">
-              <span style={{ flex: 1, fontSize: 9 }}>{whisperDisplay(m.name)}</span>
+              <span style={{ flex: 1, fontSize: 9 }}>{modelTitle(m)}</span>
               <span style={{ fontSize: 8, color: "var(--ink-faint)" }}>
                 {formatBytes(m.bytes_on_disk || m.approx_bytes)}
               </span>

@@ -5,6 +5,7 @@ export type DictationState = "idle" | "starting" | "listening" | "finishing" | "
 
 export type EngineKind = "apple" | "parakeet" | "whisper";
 export type ParakeetVersion = "v3" | "v2";
+export type Appearance = "dark" | "light";
 export type Language = "pt-BR" | "en-US";
 export type HotkeyMode = "hold" | "toggle";
 export type HudSize = "minimal" | "medium" | "large";
@@ -28,6 +29,7 @@ export interface HotkeySpec {
 export interface Settings {
   engine: EngineKind | null;
   parakeet_version: ParakeetVersion;
+  parakeet_model: string;
   whisper_model: string;
   language: Language;
   hotkey_mode: HotkeyMode;
@@ -44,11 +46,13 @@ export interface Settings {
   tile_layout: TileConfig[];
   custom_tile_layout: TileConfig[];
   layout_source_is_custom: boolean;
+  appearance: Appearance;
 }
 
 export interface SettingsPatch {
   engine?: EngineKind | null;
   parakeet_version?: ParakeetVersion;
+  parakeet_model?: string;
   whisper_model?: string;
   language?: Language;
   hotkey_mode?: HotkeyMode;
@@ -65,6 +69,7 @@ export interface SettingsPatch {
   tile_layout?: TileConfig[];
   custom_tile_layout?: TileConfig[];
   layout_source_is_custom?: boolean;
+  appearance?: Appearance;
 }
 
 export interface StatePayload {
@@ -85,6 +90,15 @@ export interface ModelStatus {
   bytes_on_disk: number;
   approx_bytes: number;
   english_only: boolean;
+  label: string;
+  family: string;
+  quant: string;
+  languages: string;
+  speed: number;
+  quality: number;
+  ram_mb: number;
+  blurb: string;
+  recommended: boolean;
 }
 
 export interface DownloadProgress {

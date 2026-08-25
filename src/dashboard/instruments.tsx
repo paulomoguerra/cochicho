@@ -1,4 +1,15 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+
+function useThemeTick() {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const el = document.documentElement;
+    const obs = new MutationObserver(() => setTick((n) => n + 1));
+    obs.observe(el, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => obs.disconnect();
+  }, []);
+  return tick;
+}
 
 /** Colunas de pontos acesos do meio pra fora — port de `DotWaveform`. */
 export function DotWaveform({
@@ -12,6 +23,7 @@ export function DotWaveform({
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const columns = 36;
+  const themeTick = useThemeTick();
 
   useEffect(() => {
     const canvas = ref.current;
@@ -32,6 +44,12 @@ export function DotWaveform({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
 
+      const styles = getComputedStyle(document.documentElement);
+      const accent = styles.getPropertyValue("--accent").trim() || "#ff4500";
+      const dotLit = styles.getPropertyValue("--dot-lit").trim() || "rgba(237,232,224,0.85)";
+      const dotMid = styles.getPropertyValue("--dot-mid").trim() || "rgba(255,255,255,0.14)";
+      const dotOff = styles.getPropertyValue("--dot-off").trim() || "rgba(255,255,255,0.07)";
+
       const gapX = w / columns;
       const gapY = h / rows;
       const radius = Math.min(gapX, gapY) * 0.28;
@@ -47,9 +65,9 @@ export function DotWaveform({
           const isLit = distance <= lit / 2 && lit > 0;
           const x = gapX * (col + 0.5);
           const y = gapY * (row + 0.5);
-          if (isLit && level > 0.6) ctx.fillStyle = "#ff4500";
-          else if (isLit) ctx.fillStyle = "rgba(237,232,224,0.85)";
-          else ctx.fillStyle = row === mid ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.07)";
+          if (isLit && level > 0.6) ctx.fillStyle = accent;
+          else if (isLit) ctx.fillStyle = dotLit;
+          else ctx.fillStyle = row === mid ? dotMid : dotOff;
           ctx.beginPath();
           ctx.arc(x, y, radius, 0, Math.PI * 2);
           ctx.fill();
@@ -61,7 +79,7 @@ export function DotWaveform({
     const ro = new ResizeObserver(draw);
     ro.observe(parent);
     return () => ro.disconnect();
-  }, [levels, rows, idle]);
+  }, [levels, rows, idle, themeTick]);
 
   return <canvas ref={ref} style={{ width: "100%", height: "100%", display: "block" }} />;
 }
@@ -77,6 +95,7 @@ export function DottedRing({
   size?: number;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const themeTick = useThemeTick();
 
   useEffect(() => {
     const canvas = ref.current;
@@ -98,12 +117,14 @@ export function DottedRing({
       const angle = (i / dots) * Math.PI * 2 - Math.PI / 2;
       const x = center + Math.cos(angle) * ringRadius;
       const y = center + Math.sin(angle) * ringRadius;
-      ctx.fillStyle = "rgba(237,232,224,0.8)";
+      ctx.fillStyle = getComputedStyle(document.documentElement)
+        .getPropertyValue("--dot-lit")
+        .trim() || "rgba(237,232,224,0.8)";
       ctx.beginPath();
       ctx.arc(x, y, 1.6, 0, Math.PI * 2);
       ctx.fill();
     }
-  }, [size]);
+  }, [size, themeTick]);
 
   return (
     <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>

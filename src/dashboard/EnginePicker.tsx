@@ -9,7 +9,17 @@ import {
 } from "../lib/ipc";
 import { PillButton } from "./ui";
 
-/** First-run Linux: Whisper only (Parakeet ainda é stub — volta quando sherpa-onnx linkar). */
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0 MB";
+  const mb = bytes / 1_000_000;
+  return mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${Math.round(mb)} MB`;
+}
+
+function modelTitle(m: ModelStatus): string {
+  return m.quant ? `${m.label} ${m.quant}` : m.label;
+}
+
+/** First-run Linux: Whisper tiny/base/small (Q5) com ficha de cada um. */
 export default function EnginePicker({ onDone }: { onDone: () => void }) {
   const [catalog, setCatalog] = useState<ModelStatus[]>([]);
   const [busyName, setBusyName] = useState<string | null>(null);
@@ -46,10 +56,13 @@ export default function EnginePicker({ onDone }: { onDone: () => void }) {
     }
   };
 
-  // tiny / base / small — bons pra ditado sem baixar GB no 1º run
   const options = catalog
     .filter((m) =>
-      ["openai_whisper-tiny", "openai_whisper-base", "openai_whisper-small"].includes(m.name),
+      [
+        "openai_whisper-tiny-q5_1",
+        "openai_whisper-base-q5_1",
+        "openai_whisper-small-q5_1",
+      ].includes(m.name),
     )
     .sort((a, b) => a.approx_bytes - b.approx_bytes);
 
@@ -71,49 +84,49 @@ export default function EnginePicker({ onDone }: { onDone: () => void }) {
         <div className="card-body">
           {options.map((m) => {
             const active = busyName === m.name;
-            const mb = Math.round(m.approx_bytes / 1_000_000);
             return (
               <button
                 key={m.name}
                 type="button"
+                className={`picker-option${active ? " active" : ""}`}
                 disabled={!!busyName}
                 onClick={() => void pick(m.engine, m.name)}
                 style={{
-                  textAlign: "left",
-                  padding: "12px 14px",
-                  borderRadius: 12,
-                  border: "1px solid var(--card-border)",
-                  background: active ? "rgba(255,69,0,0.12)" : "transparent",
-                  color: "var(--ink)",
                   cursor: busyName ? "wait" : "pointer",
                   opacity: busyName && !active ? 0.4 : 1,
                 }}
               >
                 <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: 0.5 }}>
-                  {m.engine === "parakeet" ? "PARAKEET" : "WHISPER"} · {m.name}
+                  WHISPER · {modelTitle(m)}
                 </div>
                 <div style={{ fontSize: 10, color: "var(--ink-dim)", marginTop: 4 }}>
-                  ~{mb} MB
+                  ~{formatBytes(m.approx_bytes)} · {m.languages} · RAM ~{m.ram_mb} MB
+                  {m.quant ? ` · ${m.quant}` : ""}
                   {m.downloaded ? " · baixado" : ""}
+                </div>
+                <p className="model-detail-blurb" style={{ marginTop: 6 }}>
+                  {m.blurb}
+                </p>
+                <div className="model-scores" style={{ marginTop: 8 }}>
+                  <span className="score">
+                    <span className="score-label">VEL</span>
+                    {Array.from({ length: 5 }, (_, i) => (
+                      <span key={`v${i}`} className={`score-dot${i < m.speed ? " on" : ""}`} />
+                    ))}
+                  </span>
+                  <span className="score">
+                    <span className="score-label">QUAL</span>
+                    {Array.from({ length: 5 }, (_, i) => (
+                      <span key={`q${i}`} className={`score-dot${i < m.quality ? " on" : ""}`} />
+                    ))}
+                  </span>
                 </div>
                 {active && (
                   <div
-                    style={{
-                      marginTop: 10,
-                      height: 4,
-                      borderRadius: 2,
-                      background: "rgba(255,255,255,0.08)",
-                      overflow: "hidden",
-                    }}
+                    className="download-bar"
+                    style={{ marginTop: 10, height: 4 }}
                   >
-                    <div
-                      style={{
-                        width: `${Math.round(progress * 100)}%`,
-                        height: "100%",
-                        background: "var(--ok)",
-                        transition: "width 120ms linear",
-                      }}
-                    />
+                    <span style={{ width: `${Math.round(progress * 100)}%` }} />
                   </div>
                 )}
               </button>

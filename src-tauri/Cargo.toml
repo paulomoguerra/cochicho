@@ -31,6 +31,7 @@ futures-util = "0.3.34"
 cpal = "0.18.2"
 rubato = "0.16.2"
 whisper-rs = "0.16.0"
+sherpa-rs = { version = "0.6.8", default-features = false, features = ["download-binaries", "static"] }
 uuid = { version = "1.25.0", features = ["v4", "serde"] }
 chrono = { version = "0.4.45", features = ["serde"] }
 arboard = { version = "3.6.1", features = ["wayland-data-control"] }

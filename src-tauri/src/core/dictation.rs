@@ -177,7 +177,7 @@ impl DictationController {
             EngineKind::Whisper => {
                 Box::new(WhisperEngine::new(&settings.whisper_model, settings.language))
             }
-            EngineKind::Parakeet => Box::new(ParakeetEngine::new(settings.parakeet_version)),
+            EngineKind::Parakeet => Box::new(ParakeetEngine::new(&settings.parakeet_model)),
             EngineKind::Apple => {
                 #[cfg(target_os = "macos")]
                 {
@@ -341,7 +341,7 @@ impl DictationController {
                     .map(|e| format!("{e:?}").to_lowercase())
                     .unwrap_or_default(),
                 model: match settings.engine {
-                    Some(EngineKind::Parakeet) => settings.parakeet_version.model_name().to_string(),
+                    Some(EngineKind::Parakeet) => settings.parakeet_model.clone(),
                     _ => settings.whisper_model.clone(),
                 },
                 duration_seconds: duration,

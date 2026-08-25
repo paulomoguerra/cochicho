@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  type Appearance,
   type DictationState,
   type DictionaryEntry,
   type HistoryEntry,
@@ -41,7 +42,8 @@ import { EngineTile } from "./tiles/EngineTile";
 import { HistoryTile } from "./tiles/HistoryTile";
 import { MicTile } from "./tiles/MicTile";
 import { StatsTile } from "./tiles/StatsTile";
-import { PillButton } from "./ui";
+import { PillButton, SegmentPicker } from "./ui";
+import { applyAppearance } from "../lib/theme";
 
 const EMPTY_TOTALS: HistoryTotals = { total_words: 0, total_seconds: 0, entry_count: 0 };
 
@@ -79,14 +81,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     settingsGet()
-      .then((s) => {
-        // Parakeet ainda é stub — quem escolheu no 1º run Linux volta pra Whisper.
-        if (s.engine === "parakeet") {
-          void settingsUpdate({ engine: "whisper" }).then(setSettings);
-        } else {
-          setSettings(s);
-        }
-      })
+      .then(setSettings)
       .catch(() => {});
     dictationState()
       .then((p) => setState(p.state))
@@ -158,6 +153,17 @@ export default function Dashboard() {
           <div className="dash-tagline">VOICE → TEXT · 100% LOCAL</div>
         </div>
         <div className="dash-header-right">
+          <SegmentPicker<Appearance>
+            options={[
+              { value: "dark", label: "ESCURO" },
+              { value: "light", label: "CLARO" },
+            ]}
+            value={settings.appearance ?? "dark"}
+            onChange={(appearance) => {
+              applyAppearance(appearance);
+              void settingsUpdate({ appearance });
+            }}
+          />
           <div className="dash-status">
             <span className={`dash-status-dot ${status.cls}`} />
             {status.line}

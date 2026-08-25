@@ -13,8 +13,8 @@ use crate::core::dictionary::{DictionaryEntry, DictionaryStore};
 use crate::core::history::{HistoryEntry, HistoryStore};
 use crate::core::models::{self, ModelStatus};
 use crate::core::settings::{
-    EngineKind, HotkeyMode, HotkeySpec, HudSize, Language, ParakeetVersion, Settings, SettingsFile,
-    TerminalPaste, TileConfig,
+    Appearance, EngineKind, HotkeyMode, HotkeySpec, HudSize, Language, ParakeetVersion, Settings,
+    SettingsFile, TerminalPaste, TileConfig,
 };
 use crate::platform::{hotkey, inject::TextInjector};
 
@@ -79,6 +79,7 @@ fn settings_get(state: State<'_, AppState>) -> SettingsFile {
 pub struct SettingsPatch {
     pub engine: Option<Option<EngineKind>>,
     pub parakeet_version: Option<ParakeetVersion>,
+    pub parakeet_model: Option<String>,
     pub whisper_model: Option<String>,
     pub language: Option<Language>,
     pub hotkey_mode: Option<HotkeyMode>,
@@ -95,6 +96,7 @@ pub struct SettingsPatch {
     pub tile_layout: Option<Vec<TileConfig>>,
     pub custom_tile_layout: Option<Vec<TileConfig>>,
     pub layout_source_is_custom: Option<bool>,
+    pub appearance: Option<Appearance>,
 }
 
 #[tauri::command]
@@ -108,6 +110,13 @@ fn settings_update(app: AppHandle, state: State<'_, AppState>, patch: SettingsPa
         }
         if let Some(v) = patch.parakeet_version {
             file.parakeet_version = v;
+            if patch.parakeet_model.is_none() {
+                file.parakeet_model = v.model_name().into();
+            }
+        }
+        if let Some(v) = patch.parakeet_model {
+            file.parakeet_model = v.clone();
+            file.parakeet_version = ParakeetVersion::from_model_name(&v);
         }
         if let Some(v) = patch.whisper_model {
             file.whisper_model = v;
@@ -157,6 +166,9 @@ fn settings_update(app: AppHandle, state: State<'_, AppState>, patch: SettingsPa
         if let Some(v) = patch.layout_source_is_custom {
             file.layout_source_is_custom = v;
         }
+        if let Some(v) = patch.appearance {
+            file.appearance = v;
+        }
     });
 
     if let Some(mode) = terminal_paste {
@@ -165,6 +177,8 @@ fn settings_update(app: AppHandle, state: State<'_, AppState>, patch: SettingsPa
     if hotkey_changed {
         start_hotkey_monitor(&app, &state);
     }
+
+    apply_window_appearance(&app, snapshot.appearance);
 
     let _ = app.emit("settings:changed", &snapshot);
     Ok(snapshot)
@@ -329,6 +343,22 @@ fn permissions_request_microphone() -> bool {
 // ---------------------------------------------------------------------------
 // Setup
 
+fn apply_window_appearance(app: &AppHandle, appearance: Appearance) {
+    use tauri::window::Color;
+    use tauri::Theme;
+    let (theme, color) = match appearance {
+        Appearance::Dark => (Theme::Dark, Color(0x13, 0x12, 0x11, 255)),
+        Appearance::Light => (Theme::Light, Color(0xed, 0xe8, 0xe0, 255)),
+    };
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.set_theme(Some(theme));
+        let _ = win.set_background_color(Some(color));
+    }
+    if let Some(win) = app.get_webview_window("hud") {
+        let _ = win.set_theme(Some(theme));
+    }
+}
+
 fn start_hotkey_monitor(app: &AppHandle, state: &State<'_, AppState>) {
     let spec = state.settings.get().hotkey;
     let controller = state.controller.clone();
@@ -378,6 +408,7 @@ pub fn run() {
 
             let state: State<'_, AppState> = app.state();
             start_hotkey_monitor(app.handle(), &state);
+            apply_window_appearance(app.handle(), state.settings.get().appearance);
 
             Ok(())
         })

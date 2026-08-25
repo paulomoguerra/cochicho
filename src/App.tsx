@@ -2,13 +2,32 @@ import { useEffect, useState } from "react";
 import Hud from "./hud/Hud";
 import Dashboard from "./dashboard/Dashboard";
 import EnginePicker from "./dashboard/EnginePicker";
-import { onboardingNeeded } from "./lib/ipc";
+import { onSettingsChanged, onboardingNeeded, settingsGet } from "./lib/ipc";
+import { applyAppearance, readStoredAppearance } from "./lib/theme";
 
 const isHud = new URLSearchParams(window.location.search).get("window") === "hud";
 
 export default function App() {
-  if (isHud) return <Hud />;
-  return <DashboardGate />;
+  return (
+    <>
+      <ThemeSync />
+      {isHud ? <Hud /> : <DashboardGate />}
+    </>
+  );
+}
+
+function ThemeSync() {
+  useEffect(() => {
+    applyAppearance(readStoredAppearance());
+    settingsGet()
+      .then((s) => applyAppearance(s.appearance ?? "dark"))
+      .catch(() => {});
+    const unsub = onSettingsChanged((s) => applyAppearance(s.appearance ?? "dark"));
+    return () => {
+      unsub.then((fn) => fn());
+    };
+  }, []);
+  return null;
 }
 
 function DashboardGate() {
