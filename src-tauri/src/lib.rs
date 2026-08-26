@@ -830,6 +830,11 @@ pub fn run() {
                 tray: std::sync::Mutex::new(None),
             });
 
+            #[cfg(target_os = "macos")]
+            if let Some(main) = app.get_webview_window("main") {
+                crate::platform::window_macos::disable_state_restoration(&main);
+            }
+
             create_hud_window(app)?;
             setup_tray(app)?;
 
@@ -914,6 +919,7 @@ fn create_hud_window(app: &tauri::App) -> Result<(), tauri::Error> {
     // acontece em DictationController::show_hud, após o show().
     #[cfg(target_os = "macos")]
     {
+        crate::platform::window_macos::disable_state_restoration(&window);
         let _ = window.set_ignore_cursor_events(true);
         crate::platform::hud_macos::apply_nonactivating_panel(&window);
     }

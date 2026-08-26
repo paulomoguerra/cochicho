@@ -22,3 +22,5 @@ pub use hotkey_macos as hotkey;
 pub mod hud_macos;
 #[cfg(target_os = "macos")]
 pub mod permissions_macos;
+#[cfg(target_os = "macos")]
+pub mod window_macos;
