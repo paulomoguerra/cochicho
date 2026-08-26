@@ -175,8 +175,4 @@ impl TranscriptionEngine for WhisperEngine {
             Err(_) => EngineAvailability::Unavailable,
         }
     }
-
-    fn supports_live(&self) -> bool {
-        false
-    }
 }

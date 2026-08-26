@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 
+export const DOT_WAVEFORM_COLUMNS = 36;
+export const DOT_WAVEFORM_SPEED = 0.7;
+export const DOT_WAVEFORM_EVENTS_PER_STEP = 4;
+export const DOT_WAVEFORM_STARTING_STEP_MS = Math.round(90 / DOT_WAVEFORM_SPEED);
+
 function useThemeTick() {
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -22,7 +27,7 @@ export function DotWaveform({
   idle: boolean;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const columns = 36;
+  const columns = DOT_WAVEFORM_COLUMNS;
   const themeTick = useThemeTick();
 
   useEffect(() => {

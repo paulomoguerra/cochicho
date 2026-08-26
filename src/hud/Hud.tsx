@@ -9,9 +9,15 @@ import {
   onTranscript,
   settingsGet,
 } from "../lib/ipc";
-import { DotWaveform } from "../dashboard/instruments";
+import {
+  DOT_WAVEFORM_COLUMNS,
+  DOT_WAVEFORM_EVENTS_PER_STEP,
+  DOT_WAVEFORM_SPEED,
+  DOT_WAVEFORM_STARTING_STEP_MS,
+  DotWaveform,
+} from "../dashboard/instruments";
 
-const BARS = 24;
+const BARS = DOT_WAVEFORM_COLUMNS;
 
 /**
  * HUD mínimo do M1: dot-matrix de nível de áudio + estado + transcript ao vivo.
@@ -35,6 +41,13 @@ export default function Hud() {
         if (p.state === "starting") {
           setText("");
           setIsFinal(false);
+          frame.current = 0;
+          setLevels(Array(BARS).fill(0));
+        } else if (p.transcript) {
+          // State snapshots can arrive alongside transcript events. Hydrate
+          // from a non-empty snapshot without allowing an empty state payload
+          // to erase a newer live chunk.
+          setText(p.transcript);
         }
       }),
       onTranscript((p) => {
@@ -42,8 +55,9 @@ export default function Hud() {
         setIsFinal(p.is_final);
       }),
       onAudioLevel((level) => {
-        frame.current = (frame.current + 1) % 4;
-        if (frame.current !== 0) return;
+        frame.current += DOT_WAVEFORM_SPEED;
+        if (frame.current < DOT_WAVEFORM_EVENTS_PER_STEP) return;
+        frame.current -= DOT_WAVEFORM_EVENTS_PER_STEP;
         setLevels((prev) => [...prev.slice(1), level]);
       }),
       onSettingsChanged((settings) => {
@@ -61,7 +75,7 @@ export default function Hud() {
       .then((current) => {
         setState(current.state);
         setError(current.error);
-        setText(current.transcript);
+        if (current.transcript) setText(current.transcript);
       })
       .catch(() => {});
     return () => {
@@ -69,14 +83,48 @@ export default function Hud() {
     };
   }, []);
 
+  // A hidden HUD can miss an event during the show/listen transition. Keep a
+  // lightweight snapshot sync only while a session is active so medium and
+  // large HUDs always converge on the current live transcript.
+  useEffect(() => {
+    if (state !== "starting" && state !== "listening" && state !== "finishing") {
+      return;
+    }
+
+    let cancelled = false;
+    const sync = async () => {
+      try {
+        const [current, currentSettings] = await Promise.all([
+          dictationState(),
+          settingsGet(),
+        ]);
+        if (cancelled) return;
+        setState(current.state);
+        setError(current.error);
+        setHudSize(currentSettings.hud_size);
+        setHotkeyName(currentSettings.hotkey.display_name);
+        if (current.transcript) setText(current.transcript);
+      } catch {
+        // The event stream remains the primary path; polling is best effort.
+      }
+    };
+
+    void sync();
+    const timer = window.setInterval(() => void sync(), 250);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [state]);
+
   useEffect(() => {
     if (state !== "starting") return;
     let step = 0;
     const timer = window.setInterval(() => {
       step += 1;
       const level = 0.18 + (Math.sin(step * 0.75) + 1) * 0.08;
-      setLevels((prev) => [...prev.slice(-23), level]);
-    }, 90);
+      setLevels((prev) => [...prev.slice(-(BARS - 1)), level]);
+    }, DOT_WAVEFORM_STARTING_STEP_MS);
     return () => window.clearInterval(timer);
   }, [state]);
 
@@ -103,9 +151,7 @@ export default function Hud() {
         <span className={`card-trailing${active ? " accent" : ""}`}>{label}</span>
       </div>
 
-      {hudSize !== "minimal" && (
-        <LiveTranscript text={display} live={active && !isFinal} />
-      )}
+      <LiveTranscript text={display} live={active && !isFinal} />
 
       <div className="hud-dot-wave">
         <DotWaveform
@@ -129,7 +175,11 @@ export default function Hud() {
 function LiveTranscript({ text, live }: { text: string; live: boolean }) {
   if (!text || text === "…") {
     return (
-      <div className="hud-transcript hud-transcript-placeholder">
+      <div
+        className="hud-transcript hud-transcript-placeholder"
+        aria-live="polite"
+        data-live-transcript
+      >
         Ouvindo<span className="hud-live-caret" />
       </div>
     );
@@ -139,7 +189,7 @@ function LiveTranscript({ text, live }: { text: string; live: boolean }) {
   const stable = words.slice(0, tailStart).join(" ");
   const tail = words.slice(tailStart).join(" ");
   return (
-    <div className="hud-transcript" aria-live="polite">
+    <div className="hud-transcript" aria-live="polite" data-live-transcript>
       {stable && <span className="hud-transcript-stable">{stable} </span>}
       <span className="hud-transcript-current">{tail}</span>
       {live && <span className="hud-live-caret" />}

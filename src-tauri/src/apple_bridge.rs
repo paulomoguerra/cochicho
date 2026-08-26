@@ -50,7 +50,15 @@ pub fn mic_request() -> bool {
     unsafe { ekonami_asb_mic_request() == 1 }
 }
 
-pub fn session_start(
+/// Starts an Apple Speech streaming session.
+///
+/// # Safety
+///
+/// `callback` must remain callable for the whole lifetime of the native
+/// session. `user_data` must point to valid callback state for every callback
+/// invocation, and that state must remain alive until the native session has
+/// finished or been cancelled.
+pub unsafe fn session_start(
     locale: &str,
     bias_csv: &str,
     callback: ChunkCallback,
@@ -58,9 +66,8 @@ pub fn session_start(
 ) -> Result<i32, String> {
     let locale = CString::new(locale).map_err(|e| e.to_string())?;
     let bias = CString::new(bias_csv).map_err(|e| e.to_string())?;
-    let id = unsafe {
-        ekonami_asb_session_start(locale.as_ptr(), bias.as_ptr(), callback, user_data)
-    };
+    let id =
+        unsafe { ekonami_asb_session_start(locale.as_ptr(), bias.as_ptr(), callback, user_data) };
     if id > 0 {
         Ok(id)
     } else {
@@ -72,9 +79,7 @@ pub fn session_feed(session: i32, samples: &[f32]) -> Result<(), String> {
     if samples.is_empty() {
         return Ok(());
     }
-    let rc = unsafe {
-        ekonami_asb_session_feed(session, samples.as_ptr(), samples.len() as i32)
-    };
+    let rc = unsafe { ekonami_asb_session_feed(session, samples.as_ptr(), samples.len() as i32) };
     if rc == 0 {
         Ok(())
     } else {
@@ -147,7 +152,12 @@ pub fn cancel_hotkey_capture() {
     unsafe { ekonami_asb_hotkey_capture_cancel() }
 }
 
-/// Copia o CStr do callback (válido só durante a chamada).
+/// Copies a UTF-8-ish C string received from the native callback.
+///
+/// # Safety
+///
+/// `ptr` must be null or point to a valid, readable, NUL-terminated C string
+/// that remains alive for the duration of this call.
 pub unsafe fn text_from_callback(ptr: *const c_char) -> String {
     if ptr.is_null() {
         return String::new();
@@ -163,8 +173,7 @@ mod tests {
     fn bridge_links_and_answers() {
         let version = bridge_version();
         assert_eq!(version, 4, "unexpected bridge ABI version");
-        let available = speech_available();
-        assert!(available || !available, "call must return without trapping");
+        let _ = speech_available();
         let _ = mic_status(); // 0..3 ou unknown — não pode trapear
     }
 }

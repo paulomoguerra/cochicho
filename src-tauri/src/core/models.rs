@@ -682,7 +682,8 @@ mod tests {
 
     #[test]
     fn parakeet_onnx_paths_finds_int8_layout() {
-        let dir = std::env::temp_dir().join(format!("ekonami-parakeet-test-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("ekonami-parakeet-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         for name in [
@@ -701,7 +702,8 @@ mod tests {
 
     #[test]
     fn parakeet_onnx_paths_finds_nested_layout() {
-        let dir = std::env::temp_dir().join(format!("ekonami-parakeet-nest-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("ekonami-parakeet-nest-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let inner = dir.join("sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8");
         std::fs::create_dir_all(&inner).unwrap();

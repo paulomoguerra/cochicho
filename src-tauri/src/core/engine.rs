@@ -46,5 +46,4 @@ pub trait TranscriptionEngine: Send {
     async fn cancel(&mut self);
 
     fn availability(&self) -> EngineAvailability;
-    fn supports_live(&self) -> bool;
 }

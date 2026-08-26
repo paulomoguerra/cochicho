@@ -172,10 +172,6 @@ impl TranscriptionEngine for ParakeetEngine {
             Err(_) => EngineAvailability::Unavailable,
         }
     }
-
-    fn supports_live(&self) -> bool {
-        false
-    }
 }
 
 /// Nomes relativos esperados dentro do diretório extraído do tar.bz2.

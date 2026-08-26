@@ -17,7 +17,7 @@ use crate::core::engine_parakeet::ParakeetEngine;
 use crate::core::engine_whisper::WhisperEngine;
 use crate::core::history::{HistoryEntry, HistoryStore};
 use crate::core::settings::{EngineKind, HotkeyMode, Settings};
-use crate::platform::inject::TextInjector;
+use crate::platform::inject::{InjectError, TextInjector};
 
 const MAX_RECORDING_SECONDS: u64 = 300;
 
@@ -67,6 +67,7 @@ struct Inner {
     phase: Phase,
     error: Option<String>,
     engine: Option<Box<dyn TranscriptionEngine>>,
+    recording_engine: Option<EngineKind>,
     capture: AudioCapture,
     transcript: String,
     started_at: Option<std::time::Instant>,
@@ -101,6 +102,7 @@ impl DictationController {
                 phase: Phase::Idle,
                 error: None,
                 engine: None,
+                recording_engine: None,
                 capture: AudioCapture::new(),
                 transcript: String::new(),
                 started_at: None,
@@ -220,6 +222,7 @@ impl DictationController {
             let mut guard = inner.lock().await;
             guard.phase = Phase::Starting;
             guard.error = None;
+            guard.recording_engine = Some(kind);
             guard.transcript.clear();
         }
         Self::emit_state(&deps, Phase::Starting, None).await;
@@ -258,10 +261,19 @@ impl DictationController {
                 let _ = app_for_level.emit("audio:level", level);
             },
         );
-        if let Err(e) = capture_result {
-            chunk_task.abort();
-            Self::fail_with(inner, deps, format!("Microfone: {e}")).await;
-            return;
+        match capture_result {
+            Ok(format) => {
+                log::debug!(
+                    "audio input: {} channel(s) at {} Hz",
+                    format.channels,
+                    format.sample_rate
+                );
+            }
+            Err(e) => {
+                chunk_task.abort();
+                Self::fail_with(inner, deps, format!("Microfone: {e}")).await;
+                return;
+            }
         }
 
         // Task que alimenta a engine com os chunks de áudio.
@@ -342,6 +354,7 @@ impl DictationController {
         }
 
         let settings = deps.settings.get();
+        let recording_engine = inner.lock().await.recording_engine;
         let (final_text, corrections) = if settings.dictionary_enabled {
             deps.dictionary.corrector().apply(&transcript)
         } else {
@@ -354,14 +367,14 @@ impl DictationController {
                 text: transcript,
                 corrected_text: final_text.clone(),
                 corrections,
-                engine: settings
-                    .engine
+                engine: recording_engine
                     .map(|e| format!("{e:?}").to_lowercase())
                     .unwrap_or_default(),
-                model: match settings.engine {
-                    Some(EngineKind::Parakeet) => settings.parakeet_model.clone(),
-                    _ => settings.whisper_model.clone(),
-                },
+                model: history_model(
+                    recording_engine,
+                    &settings.whisper_model,
+                    &settings.parakeet_model,
+                ),
                 duration_seconds: duration,
                 word_count: 0, // recalculado no store
                 created_at: chrono::Utc::now(),
@@ -373,17 +386,18 @@ impl DictationController {
         let text_to_insert = final_text.clone();
         let press_return = settings.press_return;
         let copy_only = settings.copy_to_clipboard;
-        tokio::task::spawn_blocking(move || {
+        let injection_result = tokio::task::spawn_blocking(move || {
             if copy_only {
                 injector.copy_only(&text_to_insert)
             } else {
                 injector.insert(&text_to_insert, press_return)
             }
         })
-        .await
-        .ok()
-        .and_then(|r| r.err())
-        .map(|e| log::warn!("injection failed: {e}"));
+        .await;
+        if let Err(message) = injection_result_message(injection_result) {
+            Self::fail_with(inner, deps, message).await;
+            return;
+        }
 
         Self::emit_transcript(&deps, &final_text, true);
         Self::reset_to_idle(inner, deps).await;
@@ -432,6 +446,7 @@ impl DictationController {
             guard.phase = Phase::Idle;
             guard.error = None;
             guard.engine = None;
+            guard.recording_engine = None;
             if let Some(task) = guard.chunk_task.take() {
                 task.abort();
             }
@@ -512,6 +527,24 @@ fn apply_transcript_snapshot(target: &mut String, chunk: &TranscriptChunk) {
     target.push_str(&chunk.text);
 }
 
+fn history_model(engine: Option<EngineKind>, whisper_model: &str, parakeet_model: &str) -> String {
+    match engine {
+        Some(EngineKind::Apple) => "system".into(),
+        Some(EngineKind::Parakeet) => parakeet_model.into(),
+        Some(EngineKind::Whisper) | None => whisper_model.into(),
+    }
+}
+
+fn injection_result_message(
+    result: Result<Result<(), InjectError>, tokio::task::JoinError>,
+) -> Result<(), String> {
+    match result {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => Err(format!("Não foi possível inserir a transcrição: {error}")),
+        Err(error) => Err(format!("A tarefa de inserção falhou: {error}")),
+    }
+}
+
 #[cfg(test)]
 mod transcript_tests {
     use super::*;
@@ -534,5 +567,57 @@ mod transcript_tests {
             );
         }
         assert_eq!(transcript, "teste de áudio.");
+    }
+
+    #[test]
+    fn apple_history_uses_system_model_instead_of_whisper_setting() {
+        assert_eq!(
+            history_model(
+                Some(EngineKind::Apple),
+                "openai_whisper-base",
+                "parakeet-v3"
+            ),
+            "system"
+        );
+    }
+
+    #[test]
+    fn history_model_follows_selected_non_apple_engine() {
+        assert_eq!(
+            history_model(
+                Some(EngineKind::Whisper),
+                "ggml-small-q5_1.bin",
+                "parakeet-v3"
+            ),
+            "ggml-small-q5_1.bin"
+        );
+        assert_eq!(
+            history_model(
+                Some(EngineKind::Parakeet),
+                "ggml-small-q5_1.bin",
+                "parakeet-v3"
+            ),
+            "parakeet-v3"
+        );
+    }
+
+    #[test]
+    fn injection_errors_are_returned_with_the_original_cause() {
+        let result =
+            injection_result_message(Ok(Err(InjectError::Clipboard("no clipboard".into()))));
+        assert_eq!(
+            result.unwrap_err(),
+            "Não foi possível inserir a transcrição: clipboard unavailable: no clipboard"
+        );
+    }
+
+    #[tokio::test]
+    async fn injection_task_failures_are_returned_instead_of_discarded() {
+        let task = tokio::spawn(async {
+            panic!("simulated injector panic");
+        });
+        let result = injection_result_message(task.await);
+        let message = result.unwrap_err();
+        assert!(message.starts_with("A tarefa de inserção falhou: task "));
     }
 }

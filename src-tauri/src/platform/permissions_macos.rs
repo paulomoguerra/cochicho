@@ -68,7 +68,6 @@ pub fn status() -> PermissionsStatus {
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     fn AXIsProcessTrusted() -> bool;
-    fn AXIsProcessTrustedWithOptions(
-        options: core_foundation::dictionary::CFDictionaryRef,
-    ) -> bool;
+    fn AXIsProcessTrustedWithOptions(options: core_foundation::dictionary::CFDictionaryRef)
+        -> bool;
 }

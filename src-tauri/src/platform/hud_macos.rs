@@ -4,12 +4,12 @@
 //! - style mask NonactivatingPanel (não vira key)
 //! - level statusBar, collectionBehavior canJoinAllSpaces|fullScreenAuxiliary|stationary
 //! - hidesOnDeactivate = false
-//! Delta vs legacy: não é NSPanel subclass com `canBecomeKey == false` override;
-//! NonactivatingPanel + focused(false) no builder cobrem o caso prático.
+//!   Delta vs legacy: não é NSPanel subclass com `canBecomeKey == false` override;
+//!   NonactivatingPanel + focused(false) no builder cobrem o caso prático.
 
 use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask};
 use objc2_foundation::MainThreadMarker;
-use tauri::{WebviewWindow, Runtime};
+use tauri::{Runtime, WebviewWindow};
 
 /// NSStatusWindowLevel = 25.
 const STATUS_BAR_LEVEL: isize = 25;

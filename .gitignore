@@ -9,6 +9,7 @@ src-tauri/gen/
 # Swift bridge + legacy SwiftPM
 .build/
 .swiftpm/
+src-tauri/apple-speech-bridge/.build/
 
 # OS
 .DS_Store

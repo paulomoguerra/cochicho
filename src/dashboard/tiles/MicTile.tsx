@@ -1,11 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   type DictationState,
   dictationToggle,
   onAudioLevel,
 } from "../../lib/ipc";
 import { isRoomy, type TileSize } from "../layout";
-import { DotWaveform } from "../instruments";
+import {
+  DOT_WAVEFORM_COLUMNS,
+  DOT_WAVEFORM_EVENTS_PER_STEP,
+  DOT_WAVEFORM_SPEED,
+  DOT_WAVEFORM_STARTING_STEP_MS,
+  DotWaveform,
+} from "../instruments";
 import { Card, CardHeader, PillButton, Stat } from "../ui";
 
 function stateLabel(state: DictationState): string {
@@ -40,18 +46,19 @@ export function MicTile({
   hotkeyName: string;
   hotkeyWarning: string | null;
 }) {
-  const [levels, setLevels] = useState<number[]>(() => Array.from({ length: 40 }, () => 0));
+  const [levels, setLevels] = useState<number[]>(() => Array(DOT_WAVEFORM_COLUMNS).fill(0));
   const [actionError, setActionError] = useState<string | null>(null);
+  const frame = useRef(0);
   const active = state === "listening" || state === "starting";
   const busy = state === "starting" || state === "finishing";
   const roomy = isRoomy(size);
 
   useEffect(() => {
     const unsub = onAudioLevel((level) => {
-      setLevels((prev) => {
-        const next = [...prev, level];
-        return next.length > 80 ? next.slice(next.length - 80) : next;
-      });
+      frame.current += DOT_WAVEFORM_SPEED;
+      if (frame.current < DOT_WAVEFORM_EVENTS_PER_STEP) return;
+      frame.current -= DOT_WAVEFORM_EVENTS_PER_STEP;
+      setLevels((prev) => [...prev.slice(1), level]);
     });
     return () => {
       unsub.then((fn) => fn());
@@ -60,12 +67,14 @@ export function MicTile({
 
   useEffect(() => {
     if (state !== "starting") return;
+    frame.current = 0;
+    setLevels(Array(DOT_WAVEFORM_COLUMNS).fill(0));
     let step = 0;
     const timer = window.setInterval(() => {
       step += 1;
       const level = 0.18 + (Math.sin(step * 0.75) + 1) * 0.08;
-      setLevels((prev) => [...prev.slice(-79), level]);
-    }, 90);
+      setLevels((prev) => [...prev.slice(-(DOT_WAVEFORM_COLUMNS - 1)), level]);
+    }, DOT_WAVEFORM_STARTING_STEP_MS);
     return () => window.clearInterval(timer);
   }, [state]);
 

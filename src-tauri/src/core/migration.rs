@@ -297,8 +297,7 @@ pub fn settings_from_legacy_map(map: &serde_json::Map<String, Value>) -> Setting
 fn decode_hotkey(v: &Value) -> Result<HotkeySpec, String> {
     match v {
         Value::String(s) => {
-            let legacy: LegacyHotkey =
-                serde_json::from_str(s).map_err(|e| e.to_string())?;
+            let legacy: LegacyHotkey = serde_json::from_str(s).map_err(|e| e.to_string())?;
             Ok(HotkeySpec {
                 key_code: legacy.key_code,
                 modifier_flag: legacy.modifier_flag,
@@ -320,8 +319,7 @@ fn decode_hotkey(v: &Value) -> Result<HotkeySpec, String> {
                 .iter()
                 .filter_map(|b| b.as_u64().map(|n| n as u8))
                 .collect();
-            let legacy: LegacyHotkey =
-                serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+            let legacy: LegacyHotkey = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
             Ok(HotkeySpec {
                 key_code: legacy.key_code,
                 modifier_flag: legacy.modifier_flag,
@@ -467,9 +465,7 @@ mod tests {
         map.insert("showDock".into(), Value::Bool(false));
         map.insert(
             "hotkey".into(),
-            Value::String(
-                r#"{"keyCode":61,"modifierFlag":64,"displayName":"R⌥"}"#.into(),
-            ),
+            Value::String(r#"{"keyCode":61,"modifierFlag":64,"displayName":"R⌥"}"#.into()),
         );
         let file = settings_from_legacy_map(&map);
         assert_eq!(file.engine, Some(EngineKind::Apple));

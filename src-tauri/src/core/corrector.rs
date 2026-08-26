@@ -41,14 +41,14 @@ impl DictionaryCorrector {
         Self { rules }
     }
 
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.rules.is_empty()
     }
 
     /// Aplica toda regra em ordem. Retorna o texto reescrito + um AppliedCorrection
     /// por regra que disparou.
     pub fn apply(&self, text: &str) -> (String, Vec<AppliedCorrection>) {
-        if self.rules.is_empty() || text.is_empty() {
+        if self.is_empty() || text.is_empty() {
             return (text.to_string(), Vec::new());
         }
 
@@ -97,7 +97,7 @@ impl DictionaryCorrector {
         let nfc: String = trigger.nfc().collect();
         let parts: Vec<String> = nfc
             .trim()
-            .split(|c: char| c == ' ' || c == '-' || c == '\t')
+            .split([' ', '-', '\t'])
             .filter(|p| !p.is_empty())
             .map(regex::escape)
             .collect();
@@ -156,7 +156,8 @@ mod tests {
 
     #[test]
     fn replaces_a_simple_pair() {
-        let (text, applied) = corrector(&[("cloud code", "Claude Code")]).apply("abre o cloud code aí");
+        let (text, applied) =
+            corrector(&[("cloud code", "Claude Code")]).apply("abre o cloud code aí");
         assert_eq!(text, "abre o Claude Code aí");
         assert_eq!(applied.len(), 1);
         assert_eq!(applied[0].to, "Claude Code");
@@ -177,7 +178,8 @@ mod tests {
 
     #[test]
     fn untouched_text_comes_back_verbatim() {
-        let (text, applied) = corrector(&[("cloud code", "Claude Code")]).apply("nada a corrigir aqui");
+        let (text, applied) =
+            corrector(&[("cloud code", "Claude Code")]).apply("nada a corrigir aqui");
         assert_eq!(text, "nada a corrigir aqui");
         assert!(applied.is_empty());
     }
@@ -198,7 +200,8 @@ mod tests {
 
     #[test]
     fn punctuation_does_not_block_a_match() {
-        let (text, _) = corrector(&[("cloud code", "Claude Code")]).apply("usa o cloud code, sempre");
+        let (text, _) =
+            corrector(&[("cloud code", "Claude Code")]).apply("usa o cloud code, sempre");
         assert_eq!(text, "usa o Claude Code, sempre");
     }
 
@@ -220,8 +223,8 @@ mod tests {
 
     #[test]
     fn longer_rule_wins_over_its_prefix() {
-        let (text, _) =
-            corrector(&[("claude", "Claude"), ("claude code", "Claude Code")]).apply("abre o claude code");
+        let (text, _) = corrector(&[("claude", "Claude"), ("claude code", "Claude Code")])
+            .apply("abre o claude code");
         assert_eq!(text, "abre o Claude Code");
     }
 
@@ -248,8 +251,8 @@ mod tests {
 
     #[test]
     fn term_entries_never_rewrite() {
-        let (text, applied) =
-            DictionaryCorrector::new(&[DictionaryEntry::term("Anthropic")]).apply("anthropic é uma empresa");
+        let (text, applied) = DictionaryCorrector::new(&[DictionaryEntry::term("Anthropic")])
+            .apply("anthropic é uma empresa");
         assert_eq!(text, "anthropic é uma empresa");
         assert!(applied.is_empty());
     }
@@ -293,14 +296,21 @@ mod tests {
             DictionaryEntry::term("figma"),
             DictionaryEntry::term("Linear"),
         ];
-        assert_eq!(DictionaryCorrector::bias_phrases(&entries), vec!["Figma", "Linear"]);
+        assert_eq!(
+            DictionaryCorrector::bias_phrases(&entries),
+            vec!["Figma", "Linear"]
+        );
     }
 
     #[test]
     fn bias_skips_disabled_and_blank_entries() {
         let mut off = DictionaryEntry::term("Oculta");
         off.is_enabled = false;
-        let entries = vec![off, DictionaryEntry::term("  "), DictionaryEntry::term("Visível")];
+        let entries = vec![
+            off,
+            DictionaryEntry::term("  "),
+            DictionaryEntry::term("Visível"),
+        ];
         assert_eq!(DictionaryCorrector::bias_phrases(&entries), vec!["Visível"]);
     }
 }

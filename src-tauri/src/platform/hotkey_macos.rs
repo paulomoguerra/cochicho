@@ -10,8 +10,8 @@ use std::thread::{self, JoinHandle};
 
 use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
 use core_graphics::event::{
-    CallbackResult, CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions,
-    CGEventTapPlacement, CGEventType, EventField,
+    CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
+    CGEventType, CallbackResult, EventField,
 };
 
 use crate::core::settings::HotkeySpec;
@@ -133,8 +133,7 @@ impl HotkeyMonitor {
 
                 // Guarda o port para re-enable no callback (o tap vive nesta thread).
                 if let Ok(mut guard) = state.lock() {
-                    guard.mach_port_ref =
-                        tap.mach_port().as_concrete_TypeRef() as usize;
+                    guard.mach_port_ref = tap.mach_port().as_concrete_TypeRef() as usize;
                 }
 
                 let loop_source = tap

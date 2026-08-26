@@ -2,7 +2,7 @@
 //! 1. Accessibility (`kAXSelectedTextAttribute`) com verificação de movimento do
 //!    insertion point — muitos apps (Electron, Chrome) devolvem success e não fazem nada.
 //! 2. Pasteboard + ⌘V, restaurando o clipboard depois.
-//! Linux: uinput (inalterado).
+//!    Linux: uinput (inalterado).
 
 use std::sync::{Mutex, RwLock};
 
@@ -19,9 +19,6 @@ pub enum InjectError {
 pub struct TextInjector {
     clipboard: Mutex<Option<arboard::Clipboard>>,
     terminal_paste: RwLock<TerminalPaste>,
-    /// Quando true, deixa o texto no clipboard após colar (setting copy_to_clipboard
-    /// no fluxo do controller usa `copy_only`; isto cobre o caso insert+keep).
-    keep_clipboard: RwLock<bool>,
 }
 
 impl TextInjector {
@@ -33,16 +30,11 @@ impl TextInjector {
         Self {
             clipboard: Mutex::new(clipboard),
             terminal_paste: RwLock::new(terminal_paste),
-            keep_clipboard: RwLock::new(false),
         }
     }
 
     pub fn set_terminal_paste(&self, mode: TerminalPaste) {
         *self.terminal_paste.write().unwrap() = mode;
-    }
-
-    pub fn set_keep_clipboard(&self, keep: bool) {
-        *self.keep_clipboard.write().unwrap() = keep;
     }
 
     /// Só copia para o clipboard, sem simular paste (setting "copiar em vez de colar").
@@ -106,11 +98,8 @@ impl TextInjector {
 
         // Legacy: 500ms para o alvo ler o pasteboard antes de restaurar.
         std::thread::sleep(std::time::Duration::from_millis(500));
-        let keep = *self.keep_clipboard.read().unwrap();
-        if !keep {
-            if let Some(prev) = previous_text {
-                let _ = clipboard.set_text(prev);
-            }
+        if let Some(prev) = previous_text {
+            let _ = clipboard.set_text(prev);
         }
         Ok(())
     }
@@ -124,7 +113,11 @@ impl TextInjector {
             TerminalPaste::Auto => detect_terminal_focus(),
         };
         if use_terminal_combo {
-            linux_combo(&[KeyCode::KEY_LEFTCTRL, KeyCode::KEY_LEFTSHIFT, KeyCode::KEY_V])
+            linux_combo(&[
+                KeyCode::KEY_LEFTCTRL,
+                KeyCode::KEY_LEFTSHIFT,
+                KeyCode::KEY_V,
+            ])
         } else {
             linux_combo(&[KeyCode::KEY_LEFTCTRL, KeyCode::KEY_V])
         }
@@ -175,7 +168,9 @@ fn linux_combo(keys: &[evdev::KeyCode]) -> Result<(), InjectError> {
 
     let event = |key: KeyCode, value: i32| InputEvent::from(KeyEvent::new(key, value));
     let emit = |device: &mut VirtualDevice, events: &[InputEvent]| -> Result<(), InjectError> {
-        device.emit(events).map_err(|e| InjectError::Paste(e.to_string()))
+        device
+            .emit(events)
+            .map_err(|e| InjectError::Paste(e.to_string()))
     };
 
     let (last, modifiers) = keys.split_last().expect("combo vazio");
@@ -214,8 +209,19 @@ fn detect_terminal_focus() -> bool {
     };
     let class = String::from_utf8_lossy(&class_out.stdout).to_lowercase();
     const TERMINALS: &[&str] = &[
-        "alacritty", "kitty", "foot", "wezterm", "gnome-terminal", "konsole",
-        "xterm", "urxvt", "st", "terminator", "tilix", "ghostty", "rio",
+        "alacritty",
+        "kitty",
+        "foot",
+        "wezterm",
+        "gnome-terminal",
+        "konsole",
+        "xterm",
+        "urxvt",
+        "st",
+        "terminator",
+        "tilix",
+        "ghostty",
+        "rio",
     ];
     TERMINALS.iter().any(|t| class.contains(t))
 }
@@ -238,11 +244,8 @@ fn macos_insert_via_ax(text: &str) -> AxOutcome {
         let system = AXUIElementCreateSystemWide();
         let mut focused: CFTypeRef = std::ptr::null();
         let focused_attr = CFString::new("AXFocusedUIElement");
-        if AXUIElementCopyAttributeValue(
-            system,
-            focused_attr.as_concrete_TypeRef(),
-            &mut focused,
-        ) != 0
+        if AXUIElementCopyAttributeValue(system, focused_attr.as_concrete_TypeRef(), &mut focused)
+            != 0
             || focused.is_null()
         {
             return AxOutcome::Unverified("no focused element".into());
@@ -281,10 +284,7 @@ fn macos_insert_via_ax(text: &str) -> AxOutcome {
 
         // Só movimento prova inserção — comprimento exato falha com autocorrect/newlines.
         if after.location == before.location && after.length == before.length {
-            return AxOutcome::Unverified(format!(
-                "selection unmoved at {}",
-                before.location
-            ));
+            return AxOutcome::Unverified(format!("selection unmoved at {}", before.location));
         }
 
         AxOutcome::Inserted

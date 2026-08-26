@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type MouseEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   type Appearance,
   type DictationState,
@@ -49,6 +50,34 @@ import { applyAppearance } from "../lib/theme";
 
 const EMPTY_TOTALS: HistoryTotals = { total_words: 0, total_seconds: 0, entry_count: 0 };
 
+function startHeaderDrag(event: MouseEvent<HTMLElement>) {
+  if (event.button !== 0) return;
+  const target = event.target;
+  if (
+    target instanceof Element &&
+    target.closest("button, a, input, select, textarea, [role='button']")
+  ) {
+    return;
+  }
+  if (!("__TAURI_INTERNALS__" in window)) return;
+  event.preventDefault();
+  void getCurrentWindow().startDragging();
+}
+
+function describeIpcError(reason: unknown): string {
+  if (reason instanceof Error && reason.message) return reason.message;
+  if (typeof reason === "string" && reason.trim()) return reason;
+  if (reason && typeof reason === "object") {
+    try {
+      const serialized = JSON.stringify(reason);
+      if (serialized && serialized !== "{}") return serialized;
+    } catch {
+      // Fall through to the stable user-facing message below.
+    }
+  }
+  return "Verifique se o app está aberto corretamente e tente novamente.";
+}
+
 export default function Dashboard() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [state, setState] = useState<DictationState>("idle");
@@ -59,6 +88,9 @@ export default function Dashboard() {
   const [entries, setEntries] = useState<DictionaryEntry[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [totals, setTotals] = useState<HistoryTotals>(EMPTY_TOTALS);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [dataWarning, setDataWarning] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const [editingLayout, setEditingLayout] = useState(false);
   const [dragged, setDragged] = useState<TileId | null>(null);
   const [didReorder, setDidReorder] = useState(false);
@@ -69,31 +101,47 @@ export default function Dashboard() {
   const refreshDictionary = useCallback(() => {
     dictionaryList()
       .then(setEntries)
-      .catch(() => {});
+      .catch((reason) => {
+        setDataWarning(`Dicionário: ${describeIpcError(reason)}`);
+      });
   }, []);
 
   const refreshHistory = useCallback(() => {
     historyList()
       .then(setHistory)
-      .catch(() => {});
+      .catch((reason) => {
+        setDataWarning(`Histórico: ${describeIpcError(reason)}`);
+      });
     historyTotals()
       .then(setTotals)
-      .catch(() => {});
+      .catch((reason) => {
+        setDataWarning(`Estatísticas: ${describeIpcError(reason)}`);
+      });
   }, []);
 
   useEffect(() => {
-    settingsGet()
-      .then(setSettings)
-      .catch(() => {});
-    dictationState()
-      .then((p) => setState(p.state))
-      .catch(() => {});
-    platformInfo()
-      .then(setPlatform)
-      .catch(() => {});
-    hotkeyStatus()
-      .then(setHotkeyWarning)
-      .catch(() => {});
+    let cancelled = false;
+    setSettings(null);
+    setBootstrapError(null);
+    setDataWarning(null);
+
+    // These calls define whether the dashboard can render a truthful state.
+    // Fail the bootstrap visibly instead of leaving the previous spinner on
+    // screen forever.
+    Promise.all([settingsGet(), dictationState(), platformInfo(), hotkeyStatus()])
+      .then(([nextSettings, nextState, nextPlatform, nextHotkey]) => {
+        if (cancelled) return;
+        setSettings(nextSettings);
+        setState(nextState.state);
+        setError(nextState.error);
+        setTranscript(nextState.transcript);
+        setPlatform(nextPlatform);
+        setHotkeyWarning(nextHotkey);
+      })
+      .catch((reason) => {
+        if (!cancelled) setBootstrapError(describeIpcError(reason));
+      });
+
     refreshDictionary();
     refreshHistory();
 
@@ -108,11 +156,19 @@ export default function Dashboard() {
       onSettingsChanged(setSettings),
       onDictionaryChanged(refreshDictionary),
       onHistoryChanged(refreshHistory),
-    ];
+    ].map((listener) =>
+      listener.catch((reason) => {
+        console.warn("Eko Nami: falha ao acompanhar estado", reason);
+        return () => {};
+      }),
+    );
     return () => {
-      unlisteners.forEach((u) => u.then((fn) => fn()));
+      cancelled = true;
+      unlisteners.forEach((u) => {
+        void u.then((fn) => fn()).catch(() => {});
+      });
     };
-  }, [refreshDictionary, refreshHistory]);
+  }, [refreshDictionary, refreshHistory, retryCount]);
 
   const layout = useMemo(
     () => (settings ? activeLayout(settings) : DEFAULT_LAYOUT),
@@ -147,18 +203,80 @@ export default function Dashboard() {
     return { line: `PRONTO · ${hotkey} · ${engine}`, cls: "" as const };
   })();
 
+  if (bootstrapError) {
+    return (
+      <div
+        className="dash"
+        role="alert"
+        style={{
+          display: "flex",
+          minHeight: "100%",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div className="card" style={{ width: "100%", maxWidth: 520, height: "auto" }}>
+          <div className="card-header">
+            <span className="card-num">!</span>
+            <span className="card-title">NÃO FOI POSSÍVEL CARREGAR</span>
+          </div>
+          <div className="card-body">
+            <p style={{ margin: 0, color: "var(--accent)", fontSize: 12, lineHeight: 1.5 }}>
+              {bootstrapError}
+            </p>
+            <button
+              type="button"
+              className="pill prominent"
+              onClick={() => setRetryCount((count) => count + 1)}
+            >
+              TENTAR DE NOVO
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!settings) {
-    return <div className="dash muted">…</div>;
+    return <div className="dash muted" role="status" aria-live="polite">CARREGANDO…</div>;
   }
 
   return (
-    <div className="dash" data-tauri-drag-region>
-      <header className="dash-header" data-tauri-drag-region>
-        <div className="dash-brand-block" data-tauri-drag-region>
-          <div className="dash-brand" data-tauri-drag-region>E K O   N A M I</div>
-          <div className="dash-tagline" data-tauri-drag-region>VOICE → TEXT · 100% LOCAL</div>
+    <div className="dash">
+      {dataWarning && (
+        <div
+          role="status"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            marginBottom: 12,
+            padding: "8px 10px",
+            border: "1px solid color-mix(in srgb, var(--accent) 34%, var(--card-border))",
+            borderRadius: 10,
+            color: "var(--accent)",
+            fontSize: 10,
+            lineHeight: 1.4,
+          }}
+        >
+          <span style={{ flex: 1 }}>{dataWarning}</span>
+          <PillButton
+            onClick={() => {
+              setDataWarning(null);
+              refreshDictionary();
+              refreshHistory();
+            }}
+          >
+            RECARREGAR
+          </PillButton>
         </div>
-        <div className="dash-drag-zone" data-tauri-drag-region aria-hidden="true" />
+      )}
+      <header className="dash-header" onMouseDown={startHeaderDrag}>
+        <div className="dash-brand-block">
+          <div className="dash-brand">E K O   N A M I</div>
+          <div className="dash-tagline">VOICE → TEXT · 100% LOCAL</div>
+        </div>
+        <div className="dash-drag-zone" aria-hidden="true" />
         <div className="dash-header-right">
           <SegmentPicker<Appearance>
             options={[

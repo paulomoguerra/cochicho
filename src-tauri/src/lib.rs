@@ -78,7 +78,9 @@ async fn dictation_toggle(state: State<'_, AppState>) -> Result<(), String> {
             .await
             .map_err(|e| e.to_string())?;
             if !authorized {
-                return Err("Autorize o Microfone em Ajustes do Sistema → Privacidade e Segurança.".into());
+                return Err(
+                    "Autorize o Microfone em Ajustes do Sistema → Privacidade e Segurança.".into(),
+                );
             }
         }
     }
@@ -109,7 +111,11 @@ fn settings_get(state: State<'_, AppState>) -> SettingsFile {
 
 #[tauri::command]
 fn hotkey_status(state: State<'_, AppState>) -> Option<String> {
-    state.hotkey_error.lock().ok().and_then(|error| error.clone())
+    state
+        .hotkey_error
+        .lock()
+        .ok()
+        .and_then(|error| error.clone())
 }
 
 #[tauri::command]
@@ -142,6 +148,15 @@ fn hotkey_capture_cancel(app: AppHandle, state: State<'_, AppState>) -> Result<(
     crate::apple_bridge::cancel_hotkey_capture();
     start_hotkey_monitor(&app, &state);
     Ok(())
+}
+
+#[tauri::command]
+fn hotkey_restart(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    start_hotkey_monitor(&app, &state);
+    match state.hotkey_error.lock() {
+        Ok(error) => error.clone().map_or(Ok(()), Err),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 /// Patch parcial de settings — só campos Some são aplicados.
@@ -621,7 +636,9 @@ fn setup_tray(app: &tauri::App) -> Result<(), tauri::Error> {
         .items(&[&portuguese, &english])
         .build()?;
     let open = MenuItemBuilder::with_id("tray-open", "Abrir Eko Nami").build(app)?;
-    let quit = MenuItemBuilder::with_id("tray-quit", "Sair").accelerator("Cmd+Q").build(app)?;
+    let quit = MenuItemBuilder::with_id("tray-quit", "Sair")
+        .accelerator("Cmd+Q")
+        .build(app)?;
     let menu = MenuBuilder::new(app)
         .item(&toggle)
         .separator()
@@ -685,7 +702,9 @@ fn set_engine_from_tray(app: &AppHandle, engine: EngineKind) {
         crate::core::engine_whisper::unload_model();
         crate::core::engine_parakeet::unload_model();
         crate::core::engine_apple::unload_model();
-        let snapshot = state.settings.update(|settings| settings.engine = Some(engine));
+        let snapshot = state
+            .settings
+            .update(|settings| settings.engine = Some(engine));
         sync_tray_menu(&app);
         let _ = app.emit("settings:changed", snapshot);
     });
@@ -693,7 +712,9 @@ fn set_engine_from_tray(app: &AppHandle, engine: EngineKind) {
 
 fn set_language_from_tray(app: &AppHandle, language: Language) {
     let state: State<'_, AppState> = app.state();
-    let snapshot = state.settings.update(|settings| settings.language = language);
+    let snapshot = state
+        .settings
+        .update(|settings| settings.language = language);
     sync_tray_menu(app);
     let _ = app.emit("settings:changed", snapshot);
 }
@@ -709,10 +730,18 @@ fn sync_tray_menu(app: &AppHandle) {
         return;
     };
     let _ = tray.apple.set_checked(engine == Some(EngineKind::Apple));
-    let _ = tray.parakeet.set_checked(engine == Some(EngineKind::Parakeet));
-    let _ = tray.whisper.set_checked(engine == Some(EngineKind::Whisper));
-    let _ = tray.portuguese.set_checked(settings.language == Language::PtBR);
-    let _ = tray.english.set_checked(settings.language == Language::EnUS);
+    let _ = tray
+        .parakeet
+        .set_checked(engine == Some(EngineKind::Parakeet));
+    let _ = tray
+        .whisper
+        .set_checked(engine == Some(EngineKind::Whisper));
+    let _ = tray
+        .portuguese
+        .set_checked(settings.language == Language::PtBR);
+    let _ = tray
+        .english
+        .set_checked(settings.language == Language::EnUS);
 }
 
 pub(crate) fn sync_tray_recording(app: &AppHandle, active: bool) {
@@ -721,9 +750,11 @@ pub(crate) fn sync_tray_recording(app: &AppHandle, active: bool) {
         return;
     };
     if let Some(tray) = tray.as_ref() {
-        let _ = tray
-            .toggle
-            .set_text(if active { "Parar ditado" } else { "Iniciar ditado" });
+        let _ = tray.toggle.set_text(if active {
+            "Parar ditado"
+        } else {
+            "Iniciar ditado"
+        });
         if let Some(icon) = tray_symbol(active) {
             let _ = tray.icon.set_icon_with_as_template(Some(icon), true);
         }
@@ -732,8 +763,7 @@ pub(crate) fn sync_tray_recording(app: &AppHandle, active: bool) {
 
 #[cfg(target_os = "macos")]
 fn tray_symbol(active: bool) -> Option<Image<'static>> {
-    crate::apple_bridge::menubar_icon_png(active)
-        .and_then(|bytes| Image::from_bytes(&bytes).ok())
+    crate::apple_bridge::menubar_icon_png(active).and_then(|bytes| Image::from_bytes(&bytes).ok())
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -817,6 +847,7 @@ pub fn run() {
             hotkey_status,
             hotkey_capture_begin,
             hotkey_capture_cancel,
+            hotkey_restart,
             settings_update,
             dictionary_list,
             dictionary_add,

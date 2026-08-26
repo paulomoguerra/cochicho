@@ -20,7 +20,9 @@ pub struct HotkeyMonitor {
 
 #[derive(Debug, thiserror::Error)]
 pub enum HotkeyError {
-    #[error("nenhum dispositivo de entrada acessível expõe essa tecla (grupo `input` configurado?)")]
+    #[error(
+        "nenhum dispositivo de entrada acessível expõe essa tecla (grupo `input` configurado?)"
+    )]
     NoDevices,
 }
 

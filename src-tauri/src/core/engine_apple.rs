@@ -45,7 +45,10 @@ pub fn unload_model() {
 }
 
 pub fn loaded_model() -> Option<String> {
-    APPLE_RESIDENCE.lock().ok().and_then(|loaded| loaded.clone())
+    APPLE_RESIDENCE
+        .lock()
+        .ok()
+        .and_then(|loaded| loaded.clone())
 }
 
 struct CallbackState {
@@ -57,7 +60,7 @@ pub struct AppleEngine {
     locale: String,
     session: Option<i32>,
     /// Mantido vivo enquanto a sessão existe — o ponteiro vai no user_data do callback.
-    cb_state: Option<Box<Arc<Mutex<CallbackState>>>>,
+    cb_state: Option<Arc<Mutex<CallbackState>>>,
 }
 
 impl AppleEngine {
@@ -76,12 +79,12 @@ unsafe extern "C" fn on_chunk(user_data: *mut c_void, text: *const c_char, kind:
     if user_data.is_null() {
         return;
     }
-    let state = &*(user_data as *const Arc<Mutex<CallbackState>>);
+    let state = &*(user_data as *const Mutex<CallbackState>);
     let Ok(mut guard) = state.lock() else { return };
 
     match kind {
         0 | 1 => {
-            let text = apple_bridge::text_from_callback(text);
+            let text = unsafe { apple_bridge::text_from_callback(text) };
             if text.is_empty() && kind == 0 {
                 return;
             }
@@ -91,7 +94,7 @@ unsafe extern "C" fn on_chunk(user_data: *mut c_void, text: *const c_char, kind:
             });
         }
         2 => {
-            let err = apple_bridge::text_from_callback(text);
+            let err = unsafe { apple_bridge::text_from_callback(text) };
             guard.last_error = Some(if err.is_empty() {
                 "apple speech error".into()
             } else {
@@ -109,37 +112,32 @@ impl TranscriptionEngine for AppleEngine {
             return Err(EngineError::Unavailable);
         }
         if apple_bridge::bridge_version() < 2 {
-            return Err(EngineError::Failed(
-                "apple-speech-bridge ABI < 2".into(),
-            ));
+            return Err(EngineError::Failed("apple-speech-bridge ABI < 2".into()));
         }
 
         let state = Arc::new(Mutex::new(CallbackState {
             tx,
             last_error: None,
         }));
-        let boxed = Box::new(state);
-        let user_data_addr =
-            (&*boxed.as_ref()) as *const Arc<Mutex<CallbackState>> as usize;
+        // `Arc` keeps the mutex allocation at a stable address while the native
+        // session is alive; the engine owns the strong reference below.
+        // Raw pointers are not `Send`; carry the address as an integer through
+        // `spawn_blocking` and reconstruct it only at the FFI boundary.
+        let user_data_addr = Arc::as_ptr(&state) as usize;
 
         let locale = self.locale.clone();
         let bias = prompt.to_string();
         let cb: ChunkCallback = on_chunk;
 
         // session_start bloqueia até o analyzer subir (semaphore no Swift).
-        let session = tokio::task::spawn_blocking(move || {
-            apple_bridge::session_start(
-                &locale,
-                &bias,
-                cb,
-                user_data_addr as *mut c_void,
-            )
+        let session = tokio::task::spawn_blocking(move || unsafe {
+            apple_bridge::session_start(&locale, &bias, cb, user_data_addr as *mut c_void)
         })
         .await
         .map_err(|e| EngineError::Failed(e.to_string()))?
         .map_err(EngineError::Failed)?;
 
-        self.cb_state = Some(boxed);
+        self.cb_state = Some(state);
         self.session = Some(session);
         Ok(())
     }
@@ -187,9 +185,5 @@ impl TranscriptionEngine for AppleEngine {
         } else {
             EngineAvailability::Unavailable
         }
-    }
-
-    fn supports_live(&self) -> bool {
-        true
     }
 }

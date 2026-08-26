@@ -199,36 +199,90 @@ impl TileConfig {
     /// Dashboard de fábrica — screenshot do Mateus de 2026-08-22.
     pub fn default_layout() -> [TileConfig; 6] {
         [
-            TileConfig { tile: Tile::Mic, size: TileSize::Wide },
-            TileConfig { tile: Tile::Engine, size: TileSize::Tall },
-            TileConfig { tile: Tile::Stats, size: TileSize::Small },
-            TileConfig { tile: Tile::History, size: TileSize::Big },
-            TileConfig { tile: Tile::Controls, size: TileSize::Tall },
-            TileConfig { tile: Tile::Dictionary, size: TileSize::Small },
+            TileConfig {
+                tile: Tile::Mic,
+                size: TileSize::Wide,
+            },
+            TileConfig {
+                tile: Tile::Engine,
+                size: TileSize::Tall,
+            },
+            TileConfig {
+                tile: Tile::Stats,
+                size: TileSize::Small,
+            },
+            TileConfig {
+                tile: Tile::History,
+                size: TileSize::Big,
+            },
+            TileConfig {
+                tile: Tile::Controls,
+                size: TileSize::Tall,
+            },
+            TileConfig {
+                tile: Tile::Dictionary,
+                size: TileSize::Small,
+            },
         ]
     }
 
     /// Layout de fábrica pré-presets — só migração.
     pub fn legacy_default_layout() -> [TileConfig; 6] {
         [
-            TileConfig { tile: Tile::Mic, size: TileSize::Wide },
-            TileConfig { tile: Tile::Engine, size: TileSize::Tall },
-            TileConfig { tile: Tile::Stats, size: TileSize::Small },
-            TileConfig { tile: Tile::History, size: TileSize::Big },
-            TileConfig { tile: Tile::Dictionary, size: TileSize::Tall },
-            TileConfig { tile: Tile::Controls, size: TileSize::Tall },
+            TileConfig {
+                tile: Tile::Mic,
+                size: TileSize::Wide,
+            },
+            TileConfig {
+                tile: Tile::Engine,
+                size: TileSize::Tall,
+            },
+            TileConfig {
+                tile: Tile::Stats,
+                size: TileSize::Small,
+            },
+            TileConfig {
+                tile: Tile::History,
+                size: TileSize::Big,
+            },
+            TileConfig {
+                tile: Tile::Dictionary,
+                size: TileSize::Tall,
+            },
+            TileConfig {
+                tile: Tile::Controls,
+                size: TileSize::Tall,
+            },
         ]
     }
 
     /// Fábrica breve com mic-big entre legacy e atual — só comparação de migração.
     pub fn previous_default_layout() -> [TileConfig; 6] {
         [
-            TileConfig { tile: Tile::Mic, size: TileSize::Big },
-            TileConfig { tile: Tile::Engine, size: TileSize::Tall },
-            TileConfig { tile: Tile::Controls, size: TileSize::Tall },
-            TileConfig { tile: Tile::History, size: TileSize::Big },
-            TileConfig { tile: Tile::Dictionary, size: TileSize::Tall },
-            TileConfig { tile: Tile::Stats, size: TileSize::Small },
+            TileConfig {
+                tile: Tile::Mic,
+                size: TileSize::Big,
+            },
+            TileConfig {
+                tile: Tile::Engine,
+                size: TileSize::Tall,
+            },
+            TileConfig {
+                tile: Tile::Controls,
+                size: TileSize::Tall,
+            },
+            TileConfig {
+                tile: Tile::History,
+                size: TileSize::Big,
+            },
+            TileConfig {
+                tile: Tile::Dictionary,
+                size: TileSize::Tall,
+            },
+            TileConfig {
+                tile: Tile::Stats,
+                size: TileSize::Small,
+            },
         ]
     }
 }
@@ -314,14 +368,6 @@ impl SettingsFile {
             && (self.tile_layout == legacy || self.tile_layout == previous)
         {
             self.tile_layout = current;
-        }
-    }
-
-    pub fn active_layout(&self) -> &[TileConfig] {
-        if self.layout_source_is_custom && !self.custom_tile_layout.is_empty() {
-            &self.custom_tile_layout
-        } else {
-            &self.tile_layout
         }
     }
 }

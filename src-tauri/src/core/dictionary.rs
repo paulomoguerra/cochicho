@@ -159,7 +159,13 @@ impl DictionaryStore {
             .collect();
         let missing: Vec<DictionaryEntry> = default_entries()
             .into_iter()
-            .filter(|e| !existing.contains(&format!("{}→{}", e.hear.to_lowercase(), e.write.to_lowercase())))
+            .filter(|e| {
+                !existing.contains(&format!(
+                    "{}→{}",
+                    e.hear.to_lowercase(),
+                    e.write.to_lowercase()
+                ))
+            })
             .collect();
         if missing.is_empty() {
             return;
@@ -188,9 +194,21 @@ impl DictionaryStore {
 /// `(forma correta, [mis-hearings])`. Lista vazia = termo só de viés.
 const DEFAULTS: &[(&str, &[&str])] = &[
     // AI tools & models — o vocabulário para o qual este app existe.
-    ("Claude Code", &["cloud code", "clawed code", "clode code", "claude codi", "cloud codi"]),
+    (
+        "Claude Code",
+        &[
+            "cloud code",
+            "clawed code",
+            "clode code",
+            "claude codi",
+            "cloud codi",
+        ],
+    ),
     ("Claude", &["clode", "cloude", "claud", "claudi"]),
-    ("ChatGPT", &["chat gpt", "chat jipiti", "chatgipiti", "chat g p t"]),
+    (
+        "ChatGPT",
+        &["chat gpt", "chat jipiti", "chatgipiti", "chat g p t"],
+    ),
     ("GPT", &["jipiti"]),
     ("OpenAI", &["open a i", "openei"]),
     ("Anthropic", &["antropic", "antrópico", "an tropic"]),
@@ -206,7 +224,10 @@ const DEFAULTS: &[(&str, &[&str])] = &[
     ("Grok", &["grock", "grook"]),
     ("Perplexity", &["perplexiti"]),
     ("Midjourney", &["mid journey", "midjorney"]),
-    ("Hugging Face", &["haguin feice", "hagen face", "hug and face"]),
+    (
+        "Hugging Face",
+        &["haguin feice", "hagen face", "hug and face"],
+    ),
     ("LangChain", &["lang chain", "langchein"]),
     ("Whisper", &["wisper", "uisper", "uispa"]),
     ("Parakeet", &["para keet", "paraquiti", "paraquite"]),
@@ -217,14 +238,29 @@ const DEFAULTS: &[(&str, &[&str])] = &[
     ("embedding", &["embedin", "embeding"]),
     ("vibe coding", &["vaib coding", "vibi coding"]),
     // Dev tools & platforms.
-    ("GitHub", &["git hub", "guitirrabe", "guite rabe", "guiti hab", "get hub"]),
+    (
+        "GitHub",
+        &[
+            "git hub",
+            "guitirrabe",
+            "guite rabe",
+            "guiti hab",
+            "get hub",
+        ],
+    ),
     ("GitLab", &["git lab", "guitilab", "get lab"]),
     ("VS Code", &["v s code", "vê esse code", "viesse code"]),
     ("Xcode", &["x code", "xis code", "ex code"]),
-    ("TypeScript", &["type script", "taipiscript", "taipe script"]),
+    (
+        "TypeScript",
+        &["type script", "taipiscript", "taipe script"],
+    ),
     ("JavaScript", &["java script", "java escript"]),
     ("Python", &["paiton", "páiton", "pyton"]),
-    ("Next.js", &["next js", "nexjs", "next dot js", "nexti jota esse"]),
+    (
+        "Next.js",
+        &["next js", "nexjs", "next dot js", "nexti jota esse"],
+    ),
     ("Node.js", &["node js", "node dot js", "nodejs"]),
     ("Tailwind", &["tail wind", "tailuind", "teiluindi"]),
     ("Supabase", &["supa base", "supabeis", "super base"]),
@@ -286,7 +322,10 @@ const DEFAULTS: &[(&str, &[&str])] = &[
     // Verbos & jargão dev (nos dois idiomas).
     ("deploy", &["deploi", "deplói"]),
     ("commit", &["comit", "comite"]),
-    ("pull request", &["pul request", "pulha requeste", "pull requesty"]),
+    (
+        "pull request",
+        &["pul request", "pulha requeste", "pull requesty"],
+    ),
     ("merge", &["merdge", "mergi"]),
     ("rebase", &["ribeis"]),
     ("branch", &["brench"]),
@@ -348,9 +387,16 @@ mod tests {
     #[test]
     fn default_seed_is_substantial() {
         let entries = default_entries();
-        assert!(entries.len() > 250, "seed should carry every mis-hearing variant");
-        assert!(entries.iter().any(|e| e.write == "Claude Code" && e.hear == "cloud code"));
-        assert!(entries.iter().any(|e| e.kind == EntryKind::Term && e.write == "Obsidian"));
+        assert!(
+            entries.len() > 250,
+            "seed should carry every mis-hearing variant"
+        );
+        assert!(entries
+            .iter()
+            .any(|e| e.write == "Claude Code" && e.hear == "cloud code"));
+        assert!(entries
+            .iter()
+            .any(|e| e.kind == EntryKind::Term && e.write == "Obsidian"));
     }
 
     #[test]

@@ -72,17 +72,4 @@ impl DiskPersister {
             let _ = std::fs::rename(&tmp, &inner.path);
         }
     }
-
-    /// Variante síncrona para uso em shutdown/testes.
-    pub async fn save_now<T: Serialize + Send>(&self, snapshot: &T, version: u64) -> std::io::Result<()> {
-        let _guard = self.inner.write_lock.lock().await;
-        if version <= self.inner.last_written.load(Ordering::SeqCst) {
-            return Ok(());
-        }
-        let data = serde_json::to_vec_pretty(snapshot).map_err(std::io::Error::other)?;
-        self.inner.last_written.store(version, Ordering::SeqCst);
-        let tmp = self.inner.path.with_extension("tmp");
-        tokio::fs::write(&tmp, &data).await?;
-        tokio::fs::rename(&tmp, &self.inner.path).await
-    }
 }

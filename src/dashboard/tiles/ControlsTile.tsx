@@ -9,6 +9,7 @@ import {
   type TerminalPaste,
   hotkeyCaptureBegin,
   hotkeyCaptureCancel,
+  hotkeyRestart,
   permissionsPromptAccessibility,
   permissionsOpenSettings,
   permissionsRequestMicrophone,
@@ -117,11 +118,20 @@ export function ControlsTile({
 
   useEffect(() => {
     if (!isMac) return;
-    const refresh = () => permissionsStatus().then(setPermissions).catch(() => {});
+    const refresh = () => {
+      permissionsStatus()
+        .then((next) => {
+          setPermissions(next);
+          if (next.accessibility && hotkeyWarning) {
+            void hotkeyRestart().catch(() => {});
+          }
+        })
+        .catch(() => {});
+    };
     refresh();
     const timer = window.setInterval(refresh, 2000);
     return () => window.clearInterval(timer);
-  }, [isMac]);
+  }, [isMac, hotkeyWarning]);
 
   useEffect(() => {
     if (!recording || isMac) return;
@@ -302,8 +312,15 @@ export function ControlsTile({
                   disabled={permissions?.microphone === "authorized"}
                   onClick={async () => {
                     const granted = await permissionsRequestMicrophone().catch(() => false);
-                    if (!granted) await permissionsOpenSettings("microphone").catch(() => false);
-                    permissionsStatus().then(setPermissions).catch(() => {});
+                    let next = await permissionsStatus().catch(() => null);
+                    if (!granted && next?.microphone !== "authorized") {
+                      await new Promise((resolve) => window.setTimeout(resolve, 500));
+                      next = await permissionsStatus().catch(() => next);
+                    }
+                    if (next?.microphone !== "authorized") {
+                      await permissionsOpenSettings("microphone").catch(() => false);
+                    }
+                    if (next) setPermissions(next);
                   }}
                 >
                   <span>MICROFONE</span>
@@ -311,16 +328,26 @@ export function ControlsTile({
                 </button>
                 <button
                   type="button"
-                  className={`permission-action${permissions?.accessibility ? " granted" : ""}`}
-                  disabled={permissions?.accessibility}
+                  className={`permission-action${permissions?.accessibility && !hotkeyWarning ? " granted" : ""}`}
+                  disabled={permissions?.accessibility && !hotkeyWarning}
                   onClick={async () => {
                     await permissionsPromptAccessibility().catch(() => false);
                     await permissionsOpenSettings("accessibility").catch(() => false);
-                    permissionsStatus().then(setPermissions).catch(() => {});
+                    const next = await permissionsStatus().catch(() => null);
+                    if (next) {
+                      setPermissions(next);
+                      if (next.accessibility) void hotkeyRestart().catch(() => {});
+                    }
                   }}
                 >
                   <span>ACESSIBILIDADE</span>
-                  <span>{permissions?.accessibility ? "AUTORIZADA" : "LIBERAR"}</span>
+                  <span>
+                    {hotkeyWarning
+                      ? "CORRIGIR"
+                      : permissions?.accessibility
+                        ? "AUTORIZADA"
+                        : "LIBERAR"}
+                  </span>
                 </button>
               </div>
             )}

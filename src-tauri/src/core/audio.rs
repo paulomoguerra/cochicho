@@ -3,7 +3,9 @@
 //! A curva de nível replica o mapeamento do Swift: dB = 20·log10(rms), piso −60 dB.
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction};
+use rubato::{
+    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+};
 
 pub const ENGINE_SAMPLE_RATE: u32 = 16_000;
 
@@ -94,7 +96,8 @@ impl AudioCapture {
                     };
 
                     if !mono.is_empty() {
-                        let rms = (mono.iter().map(|s| s * s).sum::<f32>() / mono.len() as f32).sqrt();
+                        let rms =
+                            (mono.iter().map(|s| s * s).sum::<f32>() / mono.len() as f32).sqrt();
                         let db = 20.0 * rms.max(1e-6).log10();
                         on_level(((db + 60.0) / 60.0).clamp(0.0, 1.0));
                     }
@@ -118,7 +121,9 @@ impl AudioCapture {
             )
             .map_err(|e| AudioError::Stream(e.to_string()))?;
 
-        stream.play().map_err(|e| AudioError::Stream(e.to_string()))?;
+        stream
+            .play()
+            .map_err(|e| AudioError::Stream(e.to_string()))?;
         self.stream = Some(stream);
         Ok(format)
     }

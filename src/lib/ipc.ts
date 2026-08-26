@@ -172,6 +172,7 @@ export const settingsGet = () => invoke<Settings>("settings_get");
 export const hotkeyStatus = () => invoke<string | null>("hotkey_status");
 export const hotkeyCaptureBegin = () => invoke<HotkeySpec>("hotkey_capture_begin");
 export const hotkeyCaptureCancel = () => invoke("hotkey_capture_cancel");
+export const hotkeyRestart = () => invoke("hotkey_restart");
 export const settingsUpdate = (patch: SettingsPatch) =>
   invoke<Settings>("settings_update", { patch });
 

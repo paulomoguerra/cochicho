@@ -94,6 +94,24 @@ input {
   margin-bottom: 14px;
 }
 
+/* The native title bar is overlaid, so expose a clear grab surface in the
+   header while leaving the controls on the right fully interactive. */
+.dash-header,
+.dash-brand-block,
+.dash-drag-zone {
+  cursor: grab;
+}
+
+.dash-header:active,
+.dash-brand-block:active,
+.dash-drag-zone:active {
+  cursor: grabbing;
+}
+
+.dash-header-right {
+  cursor: default;
+}
+
 .dash-brand-block {
   flex-shrink: 0;
 }
@@ -814,6 +832,12 @@ input {
 
 .hud-transcript-placeholder {
   color: var(--ink-faint);
+}
+
+@media (max-height: 100px) {
+  .hud-transcript {
+    display: none;
+  }
 }
 
 .hud-live-caret {
